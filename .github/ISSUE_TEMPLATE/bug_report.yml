@@ -1,0 +1,41 @@
+name: Bug 报告
+description: 报告一个可以复现的问题
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        提交前请先跑 `python -m la --check`,并搜索已有 issue。
+        ⚠️ 不要把 API key、PIN、真实账目/健康数据贴上来,截图请先打码。
+  - type: textarea
+    id: what
+    attributes:
+      label: 发生了什么
+      description: 期望行为 vs 实际行为
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 打开 /chat
+        2. 输入 "..."
+        3. 看到 ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 版本 / commit
+      description: `git rev-parse --short HEAD`(或你下载的 Release 版本号)
+  - type: input
+    id: env
+    attributes:
+      label: 环境
+      description: 操作系统、Python 版本、模型名
+  - type: textarea
+    id: logs
+    attributes:
+      label: 相关日志(已删敏感信息)
+      render: text

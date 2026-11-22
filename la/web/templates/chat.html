@@ -1,0 +1,228 @@
+{% extends "base.html" %}
+{% block title %}聊天 · 默{% endblock %}
+{% block body %}
+
+{# 会话头:一行说清"谁在回答、能不能写"。详细口径收进下面那行说明里,
+   不占用对话区 —— 聊天页的主视觉必须是对话本身。 #}
+<header class="chat-head">
+  <div>
+    <div class="chat-title">聊天</div>
+    <div class="chat-sub">
+      {% if read_only %}只读模式
+      {%- elif direct_write %}直写模式 · 写入可撤销
+      {%- else %}确认模式 · 写入前会先问你{% endif %}
+    </div>
+  </div>
+  <div class="chat-tools">
+    <span class="pill plain" title="模型:{{ model }}({{ provider }})">{{ model }}</span>
+    {# 联网开关(M12):点一下就切,存库、**不重启**;微信入口读的是同一份状态。
+       开着时是实心胶囊,关着是描边 —— 状态一眼可见,不用点开才知道。 #}
+    <form method="post" action="/web/toggle" style="display:inline">
+      <input type="hidden" name="next" value="/chat">
+      <button type="submit"
+              class="pill {{ 'tinted' if web and web.enabled else 'plain' }}"
+              title="{% if web and web.enabled %}联网已开{% if web.label %}({{ web.label }}){% endif %}:助手可以搜索、可以抓网页(检索词与链接会发给 DeepSeek)。点一下关掉。{% else %}联网已关:助手不会搜索、不会抓网页。点一下打开。{% endif %}">
+        联网 · {% if web and web.enabled %}开{% else %}关{% endif %}
+      </button>
+    </form>
+    {# ⭐ 2026-11-21:用户主动压缩上下文。点击本身就是确认(不再弹一次),
+       普通表单 POST —— 禁用 JS 也能用;结果以 ok/err 回跳显示。 #}
+    <form method="post" action="/context/compact" style="display:inline">
+      <input type="hidden" name="_idem" value="{{ idem() }}">
+      <input type="hidden" name="next" value="/chat">
+      <button type="submit" class="pill"
+              title="把最旧的一段历史压成摘要,保留最近约 20%。原始记录仍在归档,摘要以后仍可检索;会多一次模型调用。"
+              aria-label="压缩上下文">压缩</button>
+    </form>
+  </div>
+</header>
+
+{% if ok %}
+<div class="chat-body" style="flex:0 0 auto;overflow:visible;padding-bottom:0">
+  <div class="chat-inner"><p class="ok" style="margin:0 0 10px">{{ ok }}</p></div>
+</div>
+{% endif %}
+{% if err %}
+<div class="chat-body" style="flex:0 0 auto;overflow:visible;padding-bottom:0">
+  <div class="chat-inner"><p class="warn" style="margin:0 0 10px">{{ err }}</p></div>
+</div>
+{% endif %}
+
+{% if not model_ready %}
+<div class="chat-inner" style="flex:0 0 auto;padding-bottom:0">
+  <p class="warn" style="margin:0 0 10px">还没有配置模型密钥,现在只能看历史、不能对话。
+    <a href="/settings?tab=model" style="color:inherit;text-decoration:underline">去设置里填一个 →</a></p>
+</div>
+{% endif %}
+
+{# 回执托盘:五个域共用一套写入回执,默认收起 —— 想撤销时再展开。
+   ⚠️ 没有回执时也**照样渲染**这个托盘(里面给一句空态说明):
+   否则第一次用的人根本不知道"写进去的东西还能撤"这件事存在。 #}
+<div class="chat-body" style="flex:0 0 auto;overflow:visible;padding-bottom:0">
+<div class="chat-inner">
+  <details class="tray" id="receipt-tray">
+    <summary>
+      <span class="tray-caret">▸</span>
+      <span>最近的写入回执</span>
+      <span class="tray-hint">{{ recent|length }} 条 · 点开可下载 / 撤销</span>
+    </summary>
+    <div class="tray-body">
+      {% if recent %}
+      <p class="muted">下面每一条都是<strong>真的已经写进去了</strong>的数据。撤销是就地生效的,不需要刷新。</p>
+      {% else %}
+      <p class="muted">还没有任何写入回执。助手每写一条数据(记一笔账、加一条待办、录一道错题……)
+        都会在这里留下一条回执,写错了可以就地点「撤销」。</p>
+      {% endif %}
+      {% for item in recent %}
+      <div class="receipt{{ ' undone' if item.undone else '' }}" data-receipt-id="{{ (item.source ~ ':') if item.source else '' }}{{ item.id }}">
+        <div class="receipt-head">
+          <span class="receipt-dot">✎</span>
+          <span class="receipt-label">{{ item.label }}</span>
+          <span class="receipt-tag">[{{ item.domain }}] #{{ item.id }}</span>
+        </div>
+        {% if item.detail %}
+        <div class="receipt-meta">
+          {%- set d = item.detail -%}
+          {%- if d.amount_text %}{{ d.amount_text }}{% endif -%}
+          {%- if d.category %} · 分类 {{ d.category }}{% endif -%}
+          {%- if d.account %} · 账户 {{ d.account }}{% endif -%}
+          {%- if d.ts %} · {{ d.ts[:16] | replace('T', ' ') }}{% endif -%}
+          {%- if d.local_date and not d.ts %} · {{ d.local_date }}{% endif -%}
+        </div>
+        {% endif %}
+        {% if item.kind == 'artifact.file' %}
+        {# 产物要的是下载,不是撤销 —— 见 app.js 里同一段注释 #}
+        {% if item.undone %}
+        <button type="button" class="receipt-undo" disabled>已删除</button>
+        {% else %}
+        {# M13:生成的网页多给一个「预览」—— 下载是存到本机,预览是**在沙箱里直接打开看**。
+           链接由工具自己写进回执的 detail(只有网页产物才有 preview_url)。#}
+        {% if item.detail.preview_url %}
+        <a class="receipt-preview" href="{{ item.detail.preview_url }}" target="_blank"
+           rel="noopener" title="在沙箱里打开这个网页">预览</a>
+        {% endif %}
+        <a class="receipt-download" href="/artifacts/{{ item.detail.artifact_id }}"
+           title="下载这份产物">下载</a>
+        {% endif %}
+        {% elif item.undone %}
+        <button type="button" class="receipt-undo" disabled>已撤销</button>
+        {% elif not item.undoable %}
+        <button type="button" class="receipt-undo" disabled title="这类写入没有反向操作">不可撤销</button>
+        {% else %}
+        <button type="button" class="receipt-undo">撤销这次写入</button>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </details>
+</div>
+</div>
+
+{# ⭐ 统一反馈机制:还没回答的问题。刷新之后它还在 —— 上面那条托盘负责"写了什么",
+   这一条负责"它在等你拍板什么"。禁 JS 时是普通表单 POST。 #}
+{% if pending_questions %}
+<div class="chat-body" style="flex:0 0 auto;overflow:visible;padding-bottom:0">
+<div class="chat-inner">
+  <details class="tray" id="ask-tray" open>
+    <summary>
+      <span class="tray-caret">▸</span>
+      <span>它在等你拍板</span>
+      <span class="tray-hint">{{ pending_questions|length }} 个问题 · 点一下就能回答</span>
+    </summary>
+    <div class="tray-body">
+      {% for question, answer in pending_questions %}
+      {% set q = question.as_dict() %}
+      <div class="ask" data-question-id="{{ q.id }}">
+        <div class="ask-head"><span class="ask-mark">?</span><span class="ask-prompt">{{ q.prompt }}</span></div>
+        <form method="post" action="/questions/answer" class="ask-form">
+          <input type="hidden" name="question_id" value="{{ q.id }}">
+          <input type="hidden" name="next" value="/chat">
+          <div class="ask-options">
+            {% for option in q.options %}
+            <button class="small {{ 'neutral' if not loop.first else '' }}" name="choice"
+                    value="{{ option.value }}" title="{{ option.description }}">{{ option.label }}</button>
+            {% endfor %}
+          </div>
+          {% if q.allow_text %}
+          <div class="ask-text">
+            <input type="text" name="text" placeholder="或者自己写一句…" autocomplete="off">
+            <button class="ghost small">就这样</button>
+          </div>
+          {% endif %}
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+  </details>
+</div>
+</div>
+{% endif %}
+
+{# 对话滚动区 #}
+<div class="chat-body" id="chat-body">
+  <div class="chat-inner">
+    <div id="log" class="chat">
+      {# 已落盘的历史:刷新之后它还在。这一步不经过模型,也不改任何数据。 #}
+      {% if history_more and history_more > 0 %}
+      <p class="history-note">下面是最近 {{ history|length }} 条,更早的 {{ history_more }} 条仍在本机归档里(见「记忆」页)。</p>
+      {% endif %}
+      {% for item in history %}
+      <div class="msg {{ 'user' if item.role == 'user' else 'assistant' }}">
+        {# ⚠️ 进程还没重启时这个变量不存在 —— 回落到「助手」,而不是渲染成一个空气泡 #}
+        <div class="who">{{ '我' if item.role == 'user' else (assistant_name or '助手') }}</div>
+        <div class="body">
+          {%- if item.role == 'user' -%}
+            {{ item.content }}
+          {%- else -%}
+            {{ render_markdown(item.content) | safe }}
+          {%- endif -%}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    <div id="welcome" class="chat-welcome"{% if history %} hidden{% endif %}>
+      <img class="welcome-mark" src="/static/xiaomo-mark.svg" alt="" aria-hidden="true">
+      <h2>说点什么就行</h2>
+      <p class="sub">记账、日程、体重、错题都能直接说。要写数据会直接执行,每一次都能撤销。</p>
+      <div class="suggestions">
+        <button type="button" class="pill tinted" data-say="午饭花了 38,记一下">午饭花了 38,记一下</button>
+        <button type="button" class="pill tinted" data-say="今天体重 72.5 公斤">今天体重 72.5 公斤</button>
+        <button type="button" class="pill tinted" data-say="下周三下午三点带孩子看牙医,提醒我">下周三下午三点带孩子看牙医</button>
+        <button type="button" class="pill tinted" data-say="上周我都花了些什么钱?">上周我都花了些什么钱?</button>
+        <button type="button" class="pill tinted" data-say="看看今天有什么安排">看看今天有什么安排</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# 输入条:吸底。禁 JS 时它是一次普通 POST,模型不可用也会优雅失败。 #}
+<form id="composer" class="composer" method="post" action="/chat/stream">
+  <div class="composer-inner">
+    {# 附件:手机上最常用的是"拍一张错题发过来"。这条链路与微信完全同源
+       (素材层 -> 视觉识别 -> 直接录入),只是入口在这里。 #}
+    <button type="button" id="attach" class="ghost" title="发照片 / 文件" aria-label="发照片或文件">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.4 11.6 12 20a5 5 0 0 1-7-7l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7L9.7 17.6a1.7 1.7 0 0 1-2.4-2.4l7.8-7.8"/></svg>
+    </button>
+    <input type="file" id="attach-file" accept="image/*,.pdf,.txt,.md,.csv" multiple hidden>
+    <input type="text" id="text" name="text" placeholder="说点什么… 也可以发张错题照片" autocomplete="off"
+           enterkeyhint="send" required>
+    {# 纸飞机图标(几何取自 Phosphor 的 paper-plane-tilt,MIT;与云朵辅助培训智能体同款)。
+       零依赖:内联 SVG,断网也画得出来。图标替代"发送"两字,含义由 title/aria-label 兜住。
+       ⚠️ 标记里同时留着"发送"两字:禁用 JS 时这是普通表单提交按钮,没有文字就没人看得懂。
+       app.js 一跑起来会用图标把它替换掉(并保留 sr-only 的文字给读屏)。 #}
+    <button type="submit" title="发送" aria-label="发送" data-icon="plane">
+      <svg viewBox="0 0 256 256" fill="none" stroke="currentColor" stroke-width="24.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M227.32,28.68a16,16,0,0,0-15.66-4.08l-.15,0L19.57,82.84a16,16,0,0,0-2.49,29.8L102,154l41.3,84.87A15.86,15.86,0,0,0,157.74,248q.69,0,1.38-.06a15.88,15.88,0,0,0,14-11.51l58.2-191.94c0-.05,0-.1,0-.15A16,16,0,0,0,227.32,28.68Z"/></svg>
+    </button>
+    <button type="button" id="stop" class="ghost small" hidden>停止</button>
+  </div>
+  <div class="composer-foot">
+    {% if read_only %}当前 LA_READ_ONLY=1:写入被代码层拒绝,读操作照常。
+    {%- elif direct_write %}写操作直接执行,不再等你点确认;不对就点回执上的「撤销」。
+    {%- else %}确认模式:需要确认的动作会停在待确认状态,到对应页面手动完成。{% endif %}
+  </div>
+</form>
+
+<template id="bubble">
+  <div class="msg"><div class="who"></div><div class="body"></div></div>
+</template>
+{% endblock %}

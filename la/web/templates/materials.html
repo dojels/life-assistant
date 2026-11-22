@@ -1,0 +1,243 @@
+{% extends "base.html" %}
+{% block title %}素材与产物 · 默{% endblock %}
+{% block body %}
+<div class="page wide materials">
+
+  <header class="pg-top">
+    <div class="pg-heading">
+      <h1>素材与产物</h1>
+      <p class="pg-sub">进来的照片与文件在「素材」,出去的东西在「产物」<span class="pg-dot">·</span>原件都不经过模型</p>
+    </div>
+    <div class="pg-tools">
+      <a class="pg-btn primary" id="mt-upload-open" href="/materials?upload=1">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+        上传素材
+      </a>
+    </div>
+  </header>
+
+  {% if ok %}<p class="pg-note ok">{{ ok }}</p>{% endif %}
+  {% if err %}<p class="pg-note error">{{ err }}</p>{% endif %}
+
+  <div class="mt-stats">
+    <div class="mt-stat">
+      <span class="mt-stat-label">素材</span>
+      <b class="mt-stat-value">{{ stats.total }}</b>
+      <span class="mt-stat-sub">
+        {%- for name, count in stats.by_channel.items() -%}
+          {{ '微信' if name == 'weixin' else ('网页' if name == 'web' else name) }} {{ count }}{% if not loop.last %} · {% endif %}
+        {%- else -%}还没有{%- endfor -%}
+      </span>
+    </div>
+    <div class="mt-stat">
+      <span class="mt-stat-label">已录成错题</span>
+      <b class="mt-stat-value">{{ stats.by_handled.get('recorded', 0) }}</b>
+      <span class="mt-stat-sub">识别失败 / 不是题目的也都留着</span>
+    </div>
+    <div class="mt-stat">
+      <span class="mt-stat-label">产物</span>
+      <b class="mt-stat-value">{{ artifact_stats.total }}</b>
+      <span class="mt-stat-sub">{{ (artifact_stats.bytes / 1024) | round(1) }} KB</span>
+    </div>
+  </div>
+
+  <section class="mt-section">
+    <div class="pg-card-head">
+      <h2>素材</h2>
+      <span class="pg-card-note">
+        共 {{ mat_total }} 条{% if mat_pages > 1 %} · 第 {{ mat_page }} / {{ mat_pages }} 页{% endif %}
+      </span>
+    </div>
+
+    <div class="mt-tabs">
+      <a class="mt-tab{{ ' on' if not channel and not handled }}"
+         href="/materials">全部 <span>{{ stats.total }}</span></a>
+      {% for name, label in handled_labels.items() %}
+      <a class="mt-tab{{ ' on' if handled == name }}"
+         href="/materials?handled={{ name }}">{{ label }} <span>{{ stats.by_handled.get(name, 0) }}</span></a>
+      {% endfor %}
+      <a class="mt-tab{{ ' on' if channel == 'weixin' }}"
+         href="/materials?channel=weixin">微信来的 <span>{{ stats.by_channel.get('weixin', 0) }}</span></a>
+    </div>
+
+    {% if materials %}
+    <div class="mt-grid">
+      {% for item in materials %}
+      <article class="mt-card">
+        <a class="mt-thumb" href="/materials/{{ item.id }}/file" target="_blank" rel="noopener">
+          {% if item.kind == 'image' %}
+          <img src="/materials/{{ item.id }}/file" alt="" loading="lazy">
+          {% else %}
+          <span class="mt-thumb-icon">
+            {%- if item.kind == 'pdf' %}📕{% elif item.kind == 'video' %}🎬
+            {%- elif item.kind == 'audio' %}🎧{% else %}📎{% endif -%}
+          </span>
+          {% endif %}
+          <span class="mt-badge {{ item.handled }}">{{ item.handled_label }}</span>
+        </a>
+        <div class="mt-card-body">
+          <span class="mt-name" title="{{ item.original_name or ('素材 #' ~ item.id) }}">
+            {{ item.original_name or ('素材 #' ~ item.id) }}</span>
+          <span class="mt-meta">
+            {{ '微信' if item.channel == 'weixin' else ('网页' if item.channel == 'web' else item.channel) }}
+            <span class="pg-dot">·</span>{{ (item.byte_size / 1024) | round(1) }} KB
+            <span class="pg-dot">·</span>{{ item.created_at[5:16] | replace('T', ' ') }}
+          </span>
+          {% if item.result and item.result.recorded %}
+          <span class="mt-links">已录进错题本
+            {% for rec in item.result.recorded %}<a href="/study/problem/{{ rec.problem_id }}">#{{ rec.problem_id }}</a>{% if not loop.last %}、{% endif %}{% endfor %}
+          </span>
+          {% elif item.note %}
+          <span class="mt-links muted">{{ item.note }}</span>
+          {% endif %}
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+    {% if mat_pages > 1 %}
+    <nav class="pg-pager" aria-label="素材翻页">
+      {% if mat_page > 1 %}<a class="pgp-step" href="{{ mt_link(page=mat_page-1) }}">上一页</a>
+      {% else %}<span class="pgp-step off">上一页</span>{% endif %}
+      {% for n in mat_window %}
+        {% if n is none %}<span class="pgp-dots">…</span>
+        {% elif n == mat_page %}<span class="pgp-num on">{{ n }}</span>
+        {% else %}<a class="pgp-num" href="{{ mt_link(page=n) }}">{{ n }}</a>{% endif %}
+      {% endfor %}
+      {% if mat_page < mat_pages %}<a class="pgp-step" href="{{ mt_link(page=mat_page+1) }}">下一页</a>
+      {% else %}<span class="pgp-step off">下一页</span>{% endif %}
+    </nav>
+    {% endif %}
+    {% else %}
+    <div class="pg-card">
+      <div class="pg-empty">
+        <span class="pg-empty-mark">📎</span>
+        <span class="pg-empty-title">还没有素材</span>
+        <span class="pg-empty-sub">拍一张照片发到微信,或者点右上角「上传素材」—— 两条路都落到这里。</span>
+      </div>
+    </div>
+    {% endif %}
+  </section>
+
+  <section class="mt-section">
+    <div class="pg-card-head">
+      <h2>产物</h2>
+      <span class="pg-card-note">
+        共 {{ art_total }} 个{% if art_pages > 1 %} · 第 {{ art_page }} / {{ art_pages }} 页{% endif %}
+      </span>
+    </div>
+    {% if artifacts %}
+    <div class="pg-card mt-artifacts">
+      {% for item in artifacts %}
+      <div class="mt-artifact">
+        <span class="mt-artifact-icon {{ item.kind }}">
+          {%- if item.kind == 'html' %}🌐{% elif item.kind == 'image' %}🖼
+          {%- elif item.kind == 'sheet' %}📄{% else %}📃{% endif -%}
+        </span>
+        <div class="mt-artifact-main">
+          <span class="mt-name">{{ item.label }}</span>
+          <span class="mt-meta">{{ item.kind }} <span class="pg-dot">·</span>{{ (item.byte_size / 1024) | round(1) }} KB
+            <span class="pg-dot">·</span>{{ item.created_at[5:16] | replace('T', ' ') }}</span>
+        </div>
+        <div class="mt-artifact-acts">
+          {# M13:网页产物给一个沙箱预览入口(与聊天气泡里那条回执同一条规则) #}
+          {% if item.kind == 'html' %}
+          <a class="pg-btn small ghost" href="/generated/{{ item.id }}" target="_blank" rel="noopener">预览</a>
+          {% endif %}
+          <a class="pg-btn small ghost" href="/artifacts/{{ item.id }}">下载</a>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% if art_pages > 1 %}
+    <nav class="pg-pager" aria-label="产物翻页">
+      {% if art_page > 1 %}<a class="pgp-step" href="{{ mt_link(apage=art_page-1) }}">上一页</a>
+      {% else %}<span class="pgp-step off">上一页</span>{% endif %}
+      {% for n in art_window %}
+        {% if n is none %}<span class="pgp-dots">…</span>
+        {% elif n == art_page %}<span class="pgp-num on">{{ n }}</span>
+        {% else %}<a class="pgp-num" href="{{ mt_link(apage=n) }}">{{ n }}</a>{% endif %}
+      {% endfor %}
+      {% if art_page < art_pages %}<a class="pgp-step" href="{{ mt_link(apage=art_page+1) }}">下一页</a>
+      {% else %}<span class="pgp-step off">下一页</span>{% endif %}
+    </nav>
+    {% endif %}
+    {% else %}
+    <div class="pg-card">
+      <div class="pg-empty">
+        <span class="pg-empty-mark">📦</span>
+        <span class="pg-empty-title">还没有产物</span>
+        <span class="pg-empty-sub">在错题页点「生成今日错题卷」,或对助手说「给我出一份今天的错题卷」。</span>
+      </div>
+    </div>
+    {% endif %}
+  </section>
+
+  <details class="about">
+    <summary>微信发的照片也一样吗</summary>
+    <div class="about-body">
+      <p>一样 —— 走的是同一条流水线:素材层 → 识别 → 错题本。只有图片会走识别,
+        其余文件原样存下,一个字都不读。</p>
+    </div>
+  </details>
+
+</div>
+
+<dialog class="pg-dialog" id="mt-upload" data-open="{{ '1' if compose else '' }}">
+  <form method="post" action="/materials/upload" enctype="multipart/form-data" class="pg-form">
+    <input type="hidden" name="_idem" value="{{ idem() }}">
+    <header class="pg-dialog-head">
+      <h2>上传素材</h2>
+      <a class="pg-dialog-close" href="/materials" aria-label="关闭">×</a>
+    </header>
+
+    <label class="mt-drop" for="mt-files">
+      <span class="mt-drop-mark">📎</span>
+      <span class="mt-drop-title">选文件 / 拍照</span>
+      <span class="mt-drop-sub">照片、截图、PDF 都行 · 原样存本机,同名不覆盖</span>
+      <input id="mt-files" type="file" name="files" multiple required>
+    </label>
+
+    <label class="pg-switch">
+      <input type="checkbox" name="ingest" value="1" checked>
+      <span class="pg-switch-track"></span>
+      顺手识别成错题
+    </label>
+
+    <footer class="pg-dialog-foot">
+      <button class="pg-btn primary wide">存下来</button>
+    </footer>
+  </form>
+</dialog>
+
+<script>
+(function () {
+  var dlg = document.getElementById('mt-upload');
+  var trigger = document.getElementById('mt-upload-open');
+  if (!dlg || typeof dlg.showModal !== 'function') return;
+  if (dlg.hasAttribute('open')) dlg.close();
+  function open() { if (!dlg.open) dlg.showModal(); }
+  if (trigger) {
+    trigger.addEventListener('click', function (event) {
+      event.preventDefault();
+      open();
+    });
+  }
+  if (dlg.getAttribute('data-open')) open();
+  dlg.addEventListener('click', function (event) {
+    if (event.target === dlg) dlg.close();
+  });
+  // 选好文件后把文件名显示出来:不然用户不知道到底选中了没有
+  var input = document.getElementById('mt-files');
+  var title = dlg.querySelector('.mt-drop-title');
+  if (input && title) {
+    input.addEventListener('change', function () {
+      var files = input.files || [];
+      if (!files.length) return;
+      title.textContent = files.length === 1
+        ? files[0].name
+        : '已选 ' + files.length + ' 个文件';
+    });
+  }
+})();
+</script>
+{% endblock %}

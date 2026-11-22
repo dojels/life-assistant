@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>首次安装 · 默</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center;
+         font: 16px/1.5 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+         background: #f2f2f7; color: #1c1c1e; }
+  @media (prefers-color-scheme: dark) { body { background: #000; color: #f2f2f7; } }
+  main { width: min(420px, calc(100vw - 40px)); padding: 28px; border-radius: 18px;
+         background: color-mix(in srgb, Canvas 92%, transparent);
+         box-shadow: 0 12px 40px rgb(0 0 0 / 0.12); }
+  h1 { margin: 0 0 6px; font-size: 22px; }
+  p { margin: 0 0 18px; opacity: .72; font-size: 14px; }
+  label { display: block; margin: 14px 0 6px; font-size: 14px; opacity: .8; }
+  input { width: 100%; box-sizing: border-box; padding: 12px 14px; font-size: 18px;
+          letter-spacing: .3em; border-radius: 12px; border: 1px solid #c7c7cc;
+          background: Canvas; color: inherit; }
+  button { width: 100%; margin-top: 20px; padding: 13px; border: 0; border-radius: 12px;
+           font-size: 16px; font-weight: 600; background: #0a84ff; color: white; }
+  .error { margin-top: 15px; padding: 10px 12px; border-radius: 10px;
+           background: #ff3b301a; color: #d70015; font-size: 14px; }
+  .hint { margin-top: 16px; font-size: 12px; opacity: .55; line-height: 1.6; }
+</style>
+</head>
+<body>
+<main>
+  <h1>首次安装</h1>
+  <p>给「{{ admin_name }}」设一个 6 位 PIN。装完这台机器的数据就归你管。</p>
+  <form method="post" action="/setup">
+    <input type="hidden" name="token" value="{{ bootstrap_token }}">
+    <label for="pin">PIN(6 位数字)</label>
+    <input id="pin" name="pin" type="password" inputmode="numeric" pattern="\d{6}"
+           maxlength="6" autocomplete="new-password" autofocus required>
+    <label for="pin2">再输一次</label>
+    <input id="pin2" name="pin2" type="password" inputmode="numeric" pattern="\d{6}"
+           maxlength="6" autocomplete="new-password" required>
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+    <button type="submit">设好,进入</button>
+  </form>
+  <div class="hint">PIN 忘了可用恢复码在 /recover 重置;它和你家电脑的登录密码是两回事。
+    云端部署请先设 LA_BOOTSTRAP_TOKEN,完成后从环境变量里删掉。</div>
+</main>
+</body>
+</html>

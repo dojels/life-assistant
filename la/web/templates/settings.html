@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}设置 · 默{% endblock %}
+{% block body %}
+<div class="page wide">
+
+  <div class="page-head">
+    <div class="head-main">
+      <h1>设置</h1>
+      <p class="sub">
+        {% if tab == "model" %}填自己的模型与语音密钥,保存后下一轮就生效。
+        {% elif tab == "wechat" %}扫码登录微信,再把联系人绑到成员。
+        {% else %}成员、PIN 与数据归属。{% endif %}
+        只有管理员能动,改完不用重启。
+      </p>
+    </div>
+  </div>
+
+  {% if ok %}<p class="warn" style="background:#34c7591a;color:#248a3d">{{ ok }}</p>{% endif %}
+  {% if err %}<p class="warn">{{ err }}</p>{% endif %}
+
+  {# 纯链接页签:服务端只渲染当前那一页,刷新/分享/后退都正常(与日历/错题/报表同一套)。 #}
+  <div class="segmented tabs" role="tablist">
+    <a role="tab" aria-selected="{{ 'true' if tab == 'general' else 'false' }}"
+       href="/settings?tab=general" class="{{ 'on' if tab == 'general' else '' }}">常规</a>
+    <a role="tab" aria-selected="{{ 'true' if tab == 'wechat' else 'false' }}"
+       href="/settings?tab=wechat" class="{{ 'on' if tab == 'wechat' else '' }}">微信</a>
+    <a role="tab" aria-selected="{{ 'true' if tab == 'model' else 'false' }}"
+       href="/settings?tab=model" class="{{ 'on' if tab == 'model' else '' }}">模型</a>
+  </div>
+
+  {% if tab == "wechat" %}
+    {% include "_settings_wechat.html" %}
+  {% elif tab == "model" %}
+    {% include "_settings_model.html" %}
+  {% else %}
+    {% include "_settings_general.html" %}
+  {% endif %}
+
+</div>
+{% endblock %}

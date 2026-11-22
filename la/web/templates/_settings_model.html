@@ -1,0 +1,150 @@
+  {% if entries["llm.api_key"].source == "env" or entries["tts.api_key"].source == "env" %}
+  <p class="warn">⚠️ 启动环境里已经设了密钥变量(DEEPSEEK_API_KEY / DASHSCOPE_API_KEY),
+    它的优先级最高,<strong>会压过这里的设置</strong>。要改用页面管理,请从启动环境(systemd 单元、shell、容器)里移除它。</p>
+  {% endif %}
+  {% if not secure %}
+  <p class="warn">⚠️ 当前连接不是 HTTPS。为了不让密钥明文过网,<strong>保存与测试会被拒绝</strong>;
+    请先给站点上 TLS(或在本机 127.0.0.1 打开本页)。</p>
+  {% endif %}
+
+  {% if not sudo_ok %}
+  <section class="card" style="padding:18px">
+    <h2 style="margin-top:0">先确认是你</h2>
+    <p class="sub" style="margin-top:0">改密钥等于改"你的数据发去哪",所以再验一次 PIN。10 分钟内不用重复输入。</p>
+    <form method="post" action="/settings/sudo" style="display:flex;gap:10px;align-items:flex-end">
+      <label>6 位 PIN
+        <input name="pin" type="password" inputmode="numeric" pattern="\d{6}" maxlength="6" required
+               style="width:160px;padding:9px;border-radius:8px;border:1px solid #c7c7cc;background:Canvas;color:inherit">
+      </label>
+      <button type="submit" style="padding:10px 16px;border:0;border-radius:8px;background:#0a84ff;color:#fff;cursor:pointer">解锁</button>
+    </form>
+  </section>
+  {% else %}
+
+  <section class="card" style="padding:18px;margin-bottom:18px">
+    <h2 style="margin-top:0">对话模型</h2>
+    <p class="sub" style="margin-top:0">密钥只存加密后的密文;输入框永远不回显明文,<strong>留空表示不改</strong>。</p>
+    <form method="post" action="/settings/model" autocomplete="off"
+          style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+      <label>服务商
+        <select name="provider" style="width:100%;padding:9px;border-radius:8px;border:1px solid #c7c7cc;background:Canvas;color:inherit">
+          <option value="">(不改)</option>
+          <option value="deepseek" {% if settings.provider == "deepseek" %}selected{% endif %}>DeepSeek 官方</option>
+          <option value="fake" {% if settings.provider == "fake" %}selected{% endif %}>fake(离线演示)</option>
+        </select>
+      </label>
+      <label>接口地址
+        <input name="base_url" value="{{ settings.base_url }}" placeholder="https://api.deepseek.com"
+               style="width:100%;box-sizing:border-box;padding:9px;border-radius:8px;border:1px solid #c7c7cc;background:Canvas;color:inherit">
+      </label>
+      <label>对话模型
+        <input name="model" value="{{ settings.model }}"
+               style="width:100%;box-sizing:border-box;padding:9px;border-radius:8px;border:1px solid #c7c7cc;background:Canvas;color:inherit">
+      </label>
+      <label>推理模型
+        <input name="reasoner_model" value="{{ settings.reasoner_model }}"
+               style="width:100%;box-sizing:border-box;padding:9px;border-radius:8px;border:1px solid #c7c7cc;background:Canvas;color:inherit">
+      </label>
+      <label>思考强度
+        <select name="reasoning_effort" style="width:100%;padding:9px;border-radius:8px;border:1px solid #c7c7cc;background:Canvas;color:inherit">
+          <option value="">(不改)</option>
+          {% for effort in ["low", "high", "max"] %}
+          <option value="{{ effort }}" {% if settings.reasoning_effort == effort %}selected{% endif %}>{{ effort }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>API 密钥
+        <input name="api_key" type="password" autocomplete="new-password"
+               placeholder="{{ entries['llm.api_key'].preview or 'sk-...' }} · 来源 {{ entries['llm.api_key'].source }}"
+               style="width:100%;box-sizing:border-box;padding:9px;border-radius:8px;border:1px solid #c7c7cc;background:Canvas;color:inherit">
+      </label>
+      <div style="grid-column:1 / -1;display:flex;gap:10px;align-items:center">
+        <button type="submit" style="padding:10px 16px;border:0;border-radius:8px;background:#0a84ff;color:#fff;cursor:pointer">保存</button>
+        <span class="sub">保存的是密文;写进日志与事件的只有掩码。</span>
+      </div>
+    </form>
+  </section>
+
+  <section class="card" style="padding:18px;margin-bottom:18px">
+    <h2 style="margin-top:0">语音(听写发声)</h2>
+    <p class="sub" style="margin-top:0">百炼的 key 与对话 key <strong>不是同一个</strong>;没配也能用,只是退回本机 SAPI。</p>
+    <form method="post" action="/settings/model" autocomplete="off"
+          style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px">
+      <label>语音服务商
+        <select name="tts_provider" style="width:100%;padding:9px;border-radius:8px;border:1px solid #c7c7cc;background:Canvas;color:inherit">
+          <option value="">(不改)</option>
+          <option value="bailian" {% if settings.tts_provider == "bailian" %}selected{% endif %}>百炼(bailian)</option>
+          <option value="sapi" {% if settings.tts_provider == "sapi" %}selected{% endif %}>本机 SAPI</option>
+        </select>
+      </label>
+      <label>音色
+        <input name="tts_voice" value="{{ settings.tts_voice }}"
+               style="width:100%;box-sizing:border-box;padding:9px;border-radius:8px;border:1px solid #c7c7cc;background:Canvas;color:inherit">
+      </label>
+      <label>百炼 API 密钥
+        <input name="tts_api_key" type="password" autocomplete="new-password"
+               placeholder="{{ entries['tts.api_key'].preview or 'sk-...' }} · 来源 {{ entries['tts.api_key'].source }}"
+               style="width:100%;box-sizing:border-box;padding:9px;border-radius:8px;border:1px solid #c7c7cc;background:Canvas;color:inherit">
+      </label>
+      <div style="grid-column:1 / -1">
+        <button type="submit" style="padding:10px 16px;border:0;border-radius:8px;background:#0a84ff;color:#fff;cursor:pointer">保存语音设置</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="card" style="padding:18px;margin-bottom:18px">
+    <h2 style="margin-top:0">当前生效</h2>
+    <p class="sub" style="margin-top:0">优先级:环境变量 &gt; 页面 &gt; settings.yaml &gt; .env。
+      页面上的值压过文件里的值;环境变量是运维的紧急通道,会压过页面。</p>
+    <table style="width:100%;border-collapse:collapse">
+      <thead>
+        <tr style="text-align:left;opacity:.6;font-size:13px">
+          <th style="padding:8px 6px">项</th>
+          <th style="padding:8px 6px">来源</th>
+          <th style="padding:8px 6px">当前值</th>
+          <th style="padding:8px 6px">最后修改</th>
+          <th style="padding:8px 6px">操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% set source_labels = {"env": "环境变量", "page": "页面", "settings.yaml": "settings.yaml", ".env": ".env", "missing": "未配置"} %}
+        {% for entry in entries.values() %}
+        <tr style="border-top:1px solid #e5e5ea">
+          <td style="padding:10px 6px">{{ entry.label }}</td>
+          <td style="padding:10px 6px">{{ source_labels.get(entry.source, entry.source) }}</td>
+          <td style="padding:10px 6px;word-break:break-all">{{ entry.preview or "—" }}</td>
+          <td style="padding:10px 6px;font-size:13px;opacity:.7">{{ entry.updated_at or "—" }}</td>
+          <td style="padding:10px 6px">
+            {% if entry.source == "page" %}
+            <form method="post" action="/settings/model" style="display:inline"
+                  onsubmit="return confirm('清除「{{ entry.label }}」,回到文件里的默认值?')">
+              <input type="hidden" name="clear" value="{{ entry.key }}">
+              <button type="submit" style="padding:7px 10px;border:1px solid #ff3b30;border-radius:8px;background:transparent;color:#ff3b30;cursor:pointer">清除</button>
+            </form>
+            {% else %}
+            <span style="font-size:13px;opacity:.5">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="card" style="padding:18px">
+    <h2 style="margin-top:0">测试连接</h2>
+    <p class="sub" style="margin-top:0">发一次 GET /models(不消耗对话额度)。密钥留空就用已保存的那份。</p>
+    <form method="post" action="/settings/model/test" autocomplete="off"
+          style="display:grid;grid-template-columns:1fr 1fr auto;gap:10px;align-items:end">
+      <label>接口地址(可留空)
+        <input name="base_url" placeholder="{{ settings.base_url }}"
+               style="width:100%;box-sizing:border-box;padding:9px;border-radius:8px;border:1px solid #c7c7cc;background:Canvas;color:inherit">
+      </label>
+      <label>密钥(可留空)
+        <input name="api_key" type="password" autocomplete="new-password" placeholder="用已保存的"
+               style="width:100%;box-sizing:border-box;padding:9px;border-radius:8px;border:1px solid #c7c7cc;background:Canvas;color:inherit">
+      </label>
+      <button type="submit" style="padding:10px 16px;border:1px solid #0a84ff;border-radius:8px;background:transparent;color:#0a84ff;cursor:pointer">测试</button>
+    </form>
+  </section>
+  {% endif %}

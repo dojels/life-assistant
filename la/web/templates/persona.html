@@ -1,0 +1,218 @@
+{% extends "base.html" %}
+{% block title %}人格 · 默{% endblock %}
+{% block body %}
+<div class="page">
+
+  <div class="page-head">
+    <div class="head-main">
+      <h1>人格</h1>
+      <p class="sub">决定<strong>{{ persona_name }}</strong>是谁 —— 她的来历、性情与口吻。
+        改的是「怎么说」,改不了「说什么」。</p>
+    </div>
+    <div class="head-actions">
+      <span class="page-meta">上次修改 {{ updated_local or "没改过" }}</span>
+    </div>
+  </div>
+
+  {% if err %}<p class="warn">{{ err }}</p>{% endif %}
+  {% if ok %}<p class="ok">{{ ok }}</p>{% endif %}
+
+  {# ⭐ D146:这一版改完之后,全量测试跑过没有。
+     红着的时候**下一次保存会被拦下来**(勾下面那个「我知道」才放行)——
+     拦的理由和怎么绕过都写在这行里,不留悬念。 #}
+  {% if gate %}
+  <p class="gate-line{% if gate.tone == 'bad' %} is-bad{% elif gate.tone == 'warn' %} is-warn{% endif %}">
+    {% if gate.line %}验收:{{ gate.line }}{% else %}验收:还没跑过(每次改完会自动跑一遍){% endif %}
+    {% if gate.running %}<span class="muted"> · 正在跑</span>{% endif %}
+  </p>
+  {% endif %}
+
+  <div class="metric-grid">
+    <div class="metric">
+      <div class="metric-label">当前这一版</div>
+      <div class="metric-value" style="font-size:18px">{% if draft %}还没保存{% else %}{{ state.source_label }}{% endif %}</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">主体字数</div>
+      <div class="metric-value">{{ state.chars }}<span class="metric-unit">/ {{ max_chars }}</span></div>
+    </div>
+  </div>
+
+  <div class="section-head">
+    <h2>你写的这一段</h2>
+    <span class="section-note">保存后<strong>下一轮对话就生效</strong></span>
+  </div>
+  <section class="card">
+    <form method="post" action="/persona/save">
+      <input type="hidden" name="_idem" value="{{ idem() }}">
+      {# ⭐ D144:名字与主体同一个表单 —— 分两次存会出现"标题改了、正文没改"的半截状态 #}
+      <div class="field persona-name">
+        <label for="persona-name">她叫什么</label>
+        <div class="field-body">
+          <input id="persona-name" name="name" value="{{ persona_name }}"
+                 {% if name_max %}maxlength="{{ name_max }}"{% endif %}
+                 autocomplete="off" spellcheck="false" aria-label="她的名字">
+          <span class="field-note">页面标题与轨迹页都跟着它</span>
+        </div>
+      </div>
+      {# ⚠️ 不用 maxlength:它按 **UTF-16 单元**截断,带 emoji 时比服务端(按码点算 2000 字)
+         更早卡住。现在由服务端判定,下面那个计数先按码点数给你看,超了当场标红并拦住提交。 #}
+      <textarea class="persona-text" id="persona-text" name="text" rows="14"
+                data-max="{{ max_chars }}" spellcheck="false"
+                aria-label="人格描述">{{ state.body }}</textarea>
+      <div class="editor-foot">
+        <span class="editor-count" id="persona-counter"><b id="persona-count">{{ state.chars }}</b> / {{ max_chars }} 字<span id="persona-over" hidden> · 超了</span></span>
+        <span class="muted">写「她怎么说话」比写「她很善良」管用 —— 落在行为上的描述才有用。</span>
+        {% if gate and gate.blocked %}
+        {# 验收红着才出现:不是"功能",是一次有意的破例,所以要人自己勾 #}
+        <label class="force-line">
+          <input type="checkbox" name="force" value="1">
+          我知道它没通过,仍然保存
+        </label>
+        {% endif %}
+        <button type="submit">保存人格</button>
+      </div>
+    </form>
+    <details class="about">
+      <summary>不知道怎么写?看三条能直接抄改的句式</summary>
+      <div class="about-body">
+        <p>出厂那一版是这么组织的:<strong>来历 → 性格落在行为上 → 说话的样子</strong>。
+          关键不是形容词,而是「遇到什么情况她会怎么做」—— 能被观察到的描述,模型才演绎得出来。</p>
+        <ul>
+          <li>「她很善良」→ 写成「先接住他的状态,再给数据」</li>
+          <li>「说话简洁」→ 写成「一句能说完,就不说第二句」</li>
+          <li>「性格内向」→ 写成「没事不出声,有事直接说;不主动寒暄」</li>
+          <li>「不要油」→ 写成「不用颜文字,不卖萌,不撒娇」</li>
+        </ul>
+        <p>写不准也没关系:改完保存,下一轮对话就是新的她;不满意就点上面的回执撤销。</p>
+      </div>
+    </details>
+    <form method="post" action="/persona/reset" class="reset-row">
+      <input type="hidden" name="_idem" value="{{ idem() }}">
+      <button class="neutral small" type="submit">恢复出厂默认</button>
+      <span class="muted">恢复也留回执,你写的那一版能一键撤回来。</span>
+    </form>
+    {% if state.custom and default_body %}
+    {# 自定义之后,出厂那一版就从页面上消失了 —— 想对照、想改回去,得先"销毁"自己那版。
+       这一折叠把它留下来,纯读、不写库。 #}
+    <details class="about">
+      <summary>出厂默认那一版写了什么({{ default_chars }} 字)</summary>
+      <div class="about-body">
+        <p>想对照、想改回去时看这里。点上面的「恢复出厂默认」会换回这一版,
+          而且<strong>可撤销</strong>(你写的那一版会留在回执里)。</p>
+        <pre class="raw">{{ default_body }}</pre>
+      </div>
+    </details>
+    {% endif %}
+  </section>
+
+  <div class="section-head">
+    <h2>代码固定的这一段</h2>
+    <span class="tag draft">不可编辑</span>
+  </div>
+  <section class="card">
+    <p class="muted">
+      保存时它会<strong>无条件追加</strong>在你那段后面 —— 你没写、删了、甚至改成别的,
+      它都照旧生效。
+    </p>
+    <details class="about">
+      <summary>为什么必须有这一段</summary>
+      <div class="about-body">
+        <p><strong>人格只决定「怎么说」,永远不决定「说什么」</strong> —— 事实不会因为她胆怯而变软,
+          坏消息也不会因为她善良而变好听。</p>
+      </div>
+    </details>
+    <pre class="raw persona-lock">{{ tail }}</pre>
+  </section>
+
+  <div class="section-head">
+    <h2>模型这一轮真正读到的</h2>
+    <span class="section-note">同一条系统消息里:身份 → 人格 → 技能目录</span>
+  </div>
+  <section class="card">
+    <details class="persona-fold">
+      <summary>① 身份与边界(代码写死,优先级最高)</summary>
+      <pre class="raw">{{ identity }}</pre>
+    </details>
+    <details class="persona-fold">
+      {% if tail_chars %}
+      <summary>② 人格(你写的 {{ state.chars }} 字 + 固定的 {{ tail_chars }} 字)</summary>
+      {% else %}
+      <summary>② 人格(你写的主体 + 固定尾巴)</summary>
+      {% endif %}
+      <pre class="raw">{{ model_text }}</pre>
+    </details>
+    {% if catalog %}
+    <details class="persona-fold">
+      <summary>③ 技能目录(常驻,只有名字与一句说明)</summary>
+      <pre class="raw">{{ catalog }}</pre>
+    </details>
+    {% endif %}
+    <p class="muted" style="margin-top:10px">
+      这三段是<strong>同一条系统消息</strong>。历史之后还有三条每轮现生成的快照 ——
+      <strong>运行时上下文</strong>(当前时间 / 时区 / 会话 / 入口)、<strong>记忆</strong>(事实与检索命中)、
+      <strong>证据</strong>(考古片段),最后才是你这一句。
+    </p>
+    {# ⚠️ 这两个变量来自 Python 侧:进程还没重启时会缺 —— 缺了就不渲染,
+       而不是在页面上留一个空框和一行填不满的数字(模板热更新先于代码生效)。 #}
+    {% if identity_tokens %}
+    <p class="muted">
+      三块共用系统提示的 {{ budget }} token:身份 {{ identity_tokens }} + 人格 {{ persona_tokens }}
+      + 技能目录 {{ catalog_tokens }} ≈ <strong>{{ system_tokens }}</strong>,还剩
+      {{ budget - system_tokens }} —— 超了会从尾巴截断,先被砍掉的是技能目录
+      (她会突然不知道自己会什么)。
+    </p>
+    {% endif %}
+  </section>
+
+  <details class="about" style="margin-top:20px">
+    <summary>存哪、怎么回滚、会不会影响别的提示词</summary>
+    <div class="about-body">
+      <p>人格与名字都存在本机(<code>sys_settings.persona_text</code> / <code>persona_name</code>),
+        <strong>不经过任何模型调用</strong> —— 模型欠费、断网、关掉 API,这一页照样打得开、改得动。</p>
+      <p>每次保存都落一条<strong>可撤销回执</strong>(聊天页的回执托盘里能退回上一版,正文与名字一起退);
+        「恢复出厂默认」不是存一份空的,而是<strong>删掉这两个键</strong>,回到代码里那一版。</p>
+      <p>改名字时,正文里出现的旧名字会<strong>一并替换</strong>(否则正文叫她小默、标题叫阿豆,
+        她自己都会分不清);改了几处会在保存后的提示里说。</p>
+      <p>⚠️ 改了人格,<strong>下一条请求</strong>的前缀缓存会失效一次(只此一次,之后照旧命中);
+        它<strong>不会</strong>渗到摘要压缩与图片识别那两套提示词里 —— 那两个是工具,不是她。</p>
+    </div>
+  </details>
+
+</div>
+
+{# 字数实时计数 + 未保存提醒:纯增强,禁 JS 时静态字数照样在(服务端渲染的那一份) #}
+<script>
+(function () {
+  var box = document.getElementById('persona-text');
+  var out = document.getElementById('persona-count');
+  if (!box || !out) return;
+  var form = box.form;
+  var counter = document.getElementById('persona-counter');
+  var overNote = document.getElementById('persona-over');
+  var max = parseInt(box.getAttribute('data-max') || '0', 10) || 0;
+  var dirty = false;
+  // ⚠️ 按**码点**数,不是 value.length(那是 UTF-16 单元):一个 emoji 在服务端 len() 里是 1,
+  //    在 value.length 里是 2 —— 旧写法会把带表情的人格数字数报大一倍。
+  //    D145 起输入框**去掉了 maxlength**(它按 UTF-16 截断),所以超长由这里先拦、服务端兜底。
+  function size(text) { return Array.from(text).length; }
+  function tooLong() { return max > 0 && size(box.value) > max; }
+  function sync() {
+    out.textContent = String(size(box.value));
+    if (counter) counter.classList.toggle('over', tooLong());
+    if (overNote) overNote.hidden = !tooLong();
+  }
+  box.addEventListener('input', function () { dirty = true; sync(); });
+  if (form) form.addEventListener('submit', function (event) {
+    if (tooLong()) { event.preventDefault(); return; }   // 超了就当场拦住,别等服务端退回来
+    dirty = false;
+  });
+  window.addEventListener('beforeunload', function (event) {
+    if (!dirty) return;
+    event.preventDefault();
+    event.returnValue = '';
+  });
+  sync();
+})();
+</script>
+{% endblock %}

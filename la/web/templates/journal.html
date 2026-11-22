@@ -1,0 +1,258 @@
+{% extends "base.html" %}
+{% block title %}笔记 · 默{% endblock %}
+{% block body %}
+<div class="page wide notes">
+
+  <header class="nt-top">
+    <div class="nt-heading">
+      <h1>笔记</h1>
+      <p class="nt-sub">
+        你自己的本子<span class="nt-dot">·</span>{{ total }} 条
+        {% if inbox_count %}<span class="nt-dot">·</span>{{ inbox_count }} 条待归类{% endif %}
+      </p>
+    </div>
+    <div class="nt-tools">
+      <form class="nt-search" method="get" action="/journal" role="search">
+        {% if folder %}<input type="hidden" name="folder" value="{{ folder }}">{% endif %}
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+        <input type="search" name="q" value="{{ q }}" placeholder="搜索笔记" aria-label="搜索笔记">
+      </form>
+      <a class="nt-btn ghost" href="/journal/trash" aria-label="回收站" title="回收站">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 7h14"/><path d="M9 7V5h6v2"/><path d="M7 7l1 13h8l1-13"/></svg>
+        <span class="nt-trash-label">回收站{% if trash_count %}({{ trash_count }}){% endif %}</span>
+      </a>
+      <a class="nt-btn primary" href="/journal?new=1{% if folder %}&folder={{ folder | urlencode }}{% endif %}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        写一条
+      </a>
+    </div>
+  </header>
+
+  {% if ok %}<p class="nt-flash">{{ ok }}</p>{% endif %}
+  {% if err %}<p class="nt-flash err">{{ err }}</p>{% endif %}
+
+  {# 本子 = 一排筛选片(照账本的分类/时间片)。
+     ⚠️ 新建本子的按钮**必须在滚动容器之外**:放进去的话,它弹出的表单会被
+     overflow-x 裁掉(横向滚动会把纵向也变成 auto),表现就是"点了没反应"。 #}
+  <div class="nt-chips-row">
+    <nav class="nt-chips" aria-label="本子">
+      <a class="nt-chip{{ ' on' if not folder else '' }}" href="/journal">
+        全部<span class="nt-chip-n">{{ total }}</span>
+      </a>
+      {% for f in folders %}
+      <a class="nt-chip{{ ' on' if folder == f.path else '' }}"
+         href="/journal?folder={{ f.path | urlencode }}" title="{{ f.path }}">
+        {% if f.kind == 'inbox' %}<span class="nt-inbox-dot" aria-hidden="true"></span>{% endif %}
+        {{ f.path }}{% if f.count %}<span class="nt-chip-n">{{ f.count }}</span>{% endif %}
+      </a>
+      {% endfor %}
+    </nav>
+
+    <details class="nt-new">
+      <summary class="nt-chip dashed" title="{% if folder %}在「{{ folder }}」下新建一个本子{% else %}新建一个本子{% endif %}">
+        ＋ {% if folder %}子本子{% else %}本子{% endif %}
+      </summary>
+      <form method="post" action="/journal/folders" class="nt-new-form">
+        <input type="hidden" name="_idem" value="{{ idem() }}">
+        <input type="hidden" name="parent" value="{{ folder }}">
+        <p class="nt-new-where">
+          {% if folder %}建在「{{ folder }}」下面{% else %}建在最外层(没有父本子){% endif %}
+        </p>
+        <div class="nt-new-line">
+          <input type="text" name="name" maxlength="40" placeholder="{% if folder %}例如 小说A{% else %}新本子名{% endif %}" required>
+          <button class="nt-btn primary small" type="submit">建</button>
+        </div>
+      </form>
+    </details>
+
+    {% if folder and folder_kind != 'inbox' %}
+    <details class="nt-folder-menu">
+      <summary class="nt-chip" title="这个本子的操作">⋯<span class="nt-menu-label"> 本子</span></summary>
+      <div class="nt-menu">
+        <p class="nt-menu-title">{{ folder }}</p>
+        <p class="nt-menu-meta">
+          {{ folder_note_count }} 条笔记
+          {%- if folder_child_count %} · {{ folder_child_count }} 个子本子{% endif %}
+        </p>
+        <form method="post" action="/journal/folders/rename" class="nt-menu-line">
+          <input type="hidden" name="_idem" value="{{ idem() }}">
+          <input type="hidden" name="folder" value="{{ folder }}">
+          <input type="text" name="name" maxlength="40" placeholder="改名" required>
+          <button class="nt-btn ghost small" type="submit">改名</button>
+        </form>
+        {% if folder_deletable %}
+        <form method="post" action="/journal/folders/delete" class="nt-menu-line">
+          <input type="hidden" name="_idem" value="{{ idem() }}">
+          <input type="hidden" name="folder" value="{{ folder }}">
+          <button class="nt-btn nt-danger small" type="submit">删掉这个空本子</button>
+        </form>
+        <p class="nt-menu-hint">删掉会进回执,可以撤销。</p>
+        {% else %}
+        <button class="nt-btn small" type="button" disabled>删掉这个本子</button>
+        <p class="nt-menu-hint">
+          {%- if folder_child_count %}里面还有 {{ folder_child_count }} 个子本子,先把子本子删掉。
+          {%- else %}里面还有 {{ folder_note_count }} 条笔记 —— 删掉(进回收站)或挪走之后才能删本子。
+          {%- endif -%}
+        </p>
+        {% endif %}
+      </div>
+    </details>
+    {% endif %}
+  </div>
+
+  <div class="nt-shell{{ ' has-selection' if selected else '' }}{{ ' composing' if composing else '' }}{{ ' focus' if focus else '' }}">
+
+    {# ------------------------------------------------------------ 列表 #}
+    <section class="nt-list" aria-label="笔记列表">
+      <div class="nt-pane-head">
+        <span class="nt-pane-title">
+          {%- if q %}搜索{% elif folder %}{{ folder_label }}{% else %}最近{% endif -%}
+        </span>
+        <span class="nt-pane-note">{{ items | length }} 条</span>
+        {% if folder or q %}<a class="nt-clear" href="/journal">清除</a>{% endif %}
+      </div>
+
+      <div class="nt-list-body">
+        {% if groups %}
+          {% for group in groups %}
+          <div class="nt-day">
+            <span class="nt-day-label">{{ group.label }}</span>
+            <span class="nt-day-n">{{ group["items"] | length }}</span>
+          </div>
+          {% for item in group["items"] %}
+          <a class="nt-item{{ ' on' if selected and selected.id == item.id else '' }}"
+             href="/journal?note={{ item.id }}{% if folder %}&folder={{ folder | urlencode }}{% endif %}{% if q %}&q={{ q | urlencode }}{% endif %}{% if focus %}&focus=1{% endif %}">
+            <span class="nt-item-title">{{ item.title }}</span>
+            <span class="nt-item-peek">{{ item.peek }}</span>
+            {% if not folder %}<span class="nt-item-folder">{{ item.folder }}</span>{% endif %}
+          </a>
+          {% endfor %}
+          {% endfor %}
+        {% else %}
+          <div class="nt-empty">
+            <svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true">
+              <path d="M16 12h26l8 8v34H16z"/><path d="M42 12v9h8"/><path d="M23 30h20M23 37h16"/>
+            </svg>
+            <p class="nt-empty-title">{% if q %}没搜到{% else %}这里还没有笔记{% endif %}</p>
+            <p class="nt-empty-sub">{% if q %}换个词试试,或者去「全部」里翻。{% else %}在微信里说「记一下:…」,或者现在写一条。{% endif %}</p>
+            {% if not q %}<a class="nt-btn ghost small" href="/journal?new=1{% if folder %}&folder={{ folder | urlencode }}{% endif %}">写第一条</a>{% endif %}
+            {% if folder and not q %}
+            <form method="post" action="/journal/folders/delete" class="nt-empty-del">
+              <input type="hidden" name="_idem" value="{{ idem() }}">
+              <input type="hidden" name="folder" value="{{ folder }}">
+              {% if folder_deletable %}
+              <button class="nt-btn nt-danger small" type="submit">删掉这个空本子</button>
+              {% else %}
+              <button class="nt-btn small" type="button" disabled>删掉这个空本子</button>
+              <span class="nt-menu-hint">
+                {%- if folder_child_count %}里面还有 {{ folder_child_count }} 个子本子{% else %}里面还有笔记{% endif -%}
+              </span>
+              {% endif %}
+            </form>
+            {% endif %}
+          </div>
+        {% endif %}
+      </div>
+    </section>
+
+    {# ------------------------------------------------------------ 正文 #}
+    <section class="nt-read" aria-label="笔记正文">
+      {% if composing %}
+      <div class="nt-read-head">
+        <a class="nt-back" href="/journal{% if folder %}?folder={{ folder | urlencode }}{% endif %}">← 列表</a>
+        <div class="nt-crumbs">
+          新笔记{% if folder_label %}<span class="nt-dot">·</span>{{ folder_label }}{% endif %}
+        </div>
+        <div class="nt-read-actions">
+          <button class="nt-btn primary small" type="submit" form="nt-new">记下来</button>
+        </div>
+      </div>
+      <form id="nt-new" method="post" action="/journal/notes" class="nt-form">
+        <div class="nt-sheet">
+          <input type="hidden" name="_idem" value="{{ idem() }}">
+          <input type="hidden" name="folder" value="{{ folder }}">
+          <input class="nt-title" type="text" name="title" maxlength="120" placeholder="标题(可留空)">
+          <textarea class="nt-body" name="body" placeholder="今天打完球……" required autofocus></textarea>
+        </div>
+      </form>
+
+      {% elif selected %}
+      <div class="nt-read-head">
+        <a class="nt-back" href="/journal{% if folder %}?folder={{ folder | urlencode }}{% endif %}">← 列表</a>
+        <div class="nt-crumbs">
+          <a href="/journal?folder={{ selected.folder | urlencode }}">{{ selected.folder }}</a>
+          <span class="nt-dot">·</span>{{ selected.kind_label }}
+          <span class="nt-dot">·</span>{{ selected.date }}
+          <span class="nt-dot">·</span>#{{ selected.id }}
+        </div>
+        <div class="nt-read-actions">
+          <span class="nt-chars">{{ selected.chars }} 字</span>
+          {% if focus %}
+          <a class="nt-icon-btn" href="/journal?note={{ selected.id }}{% if folder %}&folder={{ folder | urlencode }}{% endif %}"
+             title="收起,显示列表" aria-label="收起">⤡</a>
+          {% else %}
+          <a class="nt-icon-btn" href="/journal?note={{ selected.id }}{% if folder %}&folder={{ folder | urlencode }}{% endif %}&focus=1"
+             title="整页阅读" aria-label="整页阅读">⤢</a>
+          {% endif %}
+          <button class="nt-btn primary small" type="submit" form="nt-note-{{ selected.id }}">保存</button>
+        </div>
+      </div>
+
+      <form id="nt-note-{{ selected.id }}" method="post"
+            action="/journal/notes/{{ selected.id }}" class="nt-form">
+        <div class="nt-sheet">
+          <input type="hidden" name="_idem" value="{{ idem() }}">
+          <input class="nt-title" type="text" name="title" value="{{ selected.title }}" maxlength="120" placeholder="标题">
+          <textarea class="nt-body" name="body" placeholder="写点什么…">{{ selected.body }}</textarea>
+        </div>
+      </form>
+
+      <div class="nt-read-foot">
+        <form method="post" action="/journal/notes/{{ selected.id }}/move" class="nt-move">
+          <input type="hidden" name="_idem" value="{{ idem() }}">
+          <label for="nt-move-{{ selected.id }}">挪到</label>
+          <select id="nt-move-{{ selected.id }}" name="new_folder">
+            {% for f in folders %}
+            <option value="{{ f.path }}"{% if f.path == selected.folder %} selected{% endif %}>{{ f.path }}</option>
+            {% endfor %}
+          </select>
+          <button class="nt-btn ghost small" type="submit">挪过去</button>
+        </form>
+        <details class="nt-danger">
+          <summary>删除</summary>
+          <form method="post" action="/journal/notes/{{ selected.id }}/delete">
+            <input type="hidden" name="_idem" value="{{ idem() }}">
+            <input type="hidden" name="folder" value="{{ folder }}">
+            <button class="nt-btn nt-danger small" type="submit">确认删除(进回收站)</button>
+          </form>
+        </details>
+      </div>
+
+      {% if selected.versions %}
+      <details class="nt-extra">
+        <summary>历史版本 · {{ selected.versions | length }}</summary>
+        <ul>
+          {% for v in selected.versions %}
+          <li><span>{{ v.at[:16] | replace('T', ' ') }}</span>{{ v.reason }}</li>
+          {% endfor %}
+        </ul>
+      </details>
+      {% endif %}
+
+      {# 本子的改名/删除统一在筛选片右边的「⋯ 本子」里 ——
+         放在这里的话,空本子(没有笔记可选中)根本看不到入口。 #}
+
+      {% else %}
+      <div class="nt-empty tall">
+        <svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true">
+          <path d="M14 10h26l10 10v34H14z"/><path d="M40 10v11h10"/><path d="M22 30h20M22 38h20M22 46h12"/>
+        </svg>
+        <p class="nt-empty-title">还没有选中哪一页</p>
+        <p class="nt-empty-sub">左边点一条看看,或者写一条新的。</p>
+        <a class="nt-btn primary small" href="/journal?new=1{% if folder %}&folder={{ folder | urlencode }}{% endif %}">写一条</a>
+      </div>
+      {% endif %}
+    </section>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,497 @@
+{% extends "base.html" %}
+{% block title %}轨迹 · 默{% endblock %}
+{% block body %}
+<div class="page wide">
+
+  <div class="page-head">
+    <div class="head-main">
+      <h1>轨迹</h1>
+      <p class="sub">模型这一轮到底看到了什么 —— 逐字回放当时真正发出去的那一份,不是现在重算的。</p>
+    </div>
+  </div>
+
+  {# ---------------------------------------------------------- 页签(D119)
+     ⭐ 用户 2026-10-14:"优化轨迹界面视觉效果,让用户获取更清晰的信息,可以采用页标签切换"。
+        三个页签各管一件事 —— 规则是读一次的参考材料,上下文是每次都要看的那一份,
+        它们不该同时挤在一屏里(与 D111 错题页 / D112 日历页同一套做法)。
+        纯链接实现(服务端只渲染当前那一页):不需要 JS,刷新/分享/后退都正常。 #}
+  <div class="segmented tabs" role="tablist">
+    {% for item in view.tabs %}
+    <a role="tab" aria-selected="{{ 'true' if item.on else 'false' }}"
+       href="{{ item.href }}" class="{{ 'on' if item.on else '' }}">
+      {{ item.label }}{% if item.count %}<span class="count">{{ item.count }}</span>{% endif %}
+    </a>
+    {% endfor %}
+  </div>
+
+  {# ================================================================ 上下文 #}
+  {% if view.tab == 'context' %}
+
+    {% if not view.turn %}
+    <p class="warn">
+      <strong>还没有任何一轮对话落在这里。</strong>
+      每装配完一轮上下文,系统就会把<strong>真正发出去的那一份</strong>写进
+      <code>{{ view.trace_file }}</code> —— 所以这里空着,说明这台机器上还没人跟助手说过话。
+      去 <a href="/chat">聊天</a> 说一句(或者跑
+      <code>python -m la --once "你好"</code>)就会多出一条;
+      想先弄明白这一页在看什么,可以切到 <a href="/trace?tab=rules">规则</a> 那一页。
+    </p>
+    {% else %}
+
+    <div class="metric-grid">
+      <div class="metric">
+        <div class="metric-label">投影(不含工具 schema)</div>
+        <div class="metric-value">{{ view.turn.total }}<span class="metric-unit">token</span></div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">工具 schema(另走 tools 字段)</div>
+        <div class="metric-value">{{ view.turn.tools }}<span class="metric-unit">token</span></div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">这一轮输入合计</div>
+        <div class="metric-value">{{ view.turn.grand_total }}<span class="metric-unit">token</span></div>
+      </div>
+      {# ⭐ D122:这一轮里"下一轮还能原样重放"的那段 —— 它就是前缀缓存的记分牌。
+         D122 之前落下的旧记录没有这个字段,如实说"旧记录",别显示成 0 让人以为缓存没了。 #}
+      <div class="metric">
+        <div class="metric-label">下一轮可复用的前缀</div>
+        {% if view.turn.cache_prefix %}
+        <div class="metric-value">{{ view.turn.cache_prefix }}<span class="metric-unit">token</span></div>
+        {% else %}
+        <div class="metric-value" style="font-size:15px">— 旧记录</div>
+        {% endif %}
+      </div>
+      <div class="metric">
+        <div class="metric-label">距压缩触发线</div>
+        {% if view.turn.total >= view.totals.trigger %}
+        <div class="metric-value" style="font-size:19px">已越过</div>
+        {% else %}
+        <div class="metric-value">{{ view.totals.trigger - view.turn.total }}<span class="metric-unit">token</span></div>
+        {% endif %}
+      </div>
+    </div>
+
+    <section class="card">
+      <div class="chip-row">
+        <span class="tag">{{ view.turn.surface_label }}</span>
+        <span class="tag">{{ view.turn.model or "模型未知" }}</span>
+        <span class="tag">{{ view.turn.at }}</span>
+        <span class="tag">第 {{ view.turn.turn }} 轮 · 会话 {{ view.turn.session }}</span>
+        <span class="tag">共 {{ view.turn.messages | length }} 条消息</span>
+        {% if view.turn.persona_custom is not none %}
+        <span class="tag">人格 {{ "你自己写的" if view.turn.persona_custom else "出厂默认" }}({{ view.turn.persona_chars }} 字)</span>
+        {% endif %}
+        {% if view.turn.dropped_turns %}<span class="tag draft">丢了 {{ view.turn.dropped_turns }} 条旧消息</span>{% endif %}
+        {% if view.turn.capped %}<span class="tag draft">硬上限生效</span>{% endif %}
+      </div>
+
+      {# ⭐ 一张图先说清"谁占了大头、离压缩还有多远":四个数字分开看都对,
+         但"工具比上下文还大"这件事得靠图才一眼看得见。 #}
+      <div class="trace-figure">
+        <div class="trace-figure-head">
+          <span class="trace-figure-title">上下文投影(每一轮发给模型的 messages)</span>
+          <span class="trace-figure-note">{{ view.turn.stack.note }}</span>
+        </div>
+        <div class="trace-scale">
+          <div class="trace-stack">
+            {% for slice in view.turn.stack.slices %}
+            <span class="{{ slice.css }}" style="width: {{ '%.3f' | format(slice.percent) }}%"
+                  title="{{ slice.label }} ≈ {{ slice.actual }} token"></span>
+            {% endfor %}
+          </div>
+          {% for mark in view.turn.stack.marks %}
+          <span class="trace-tick {{ mark.css }}" style="left: {{ '%.3f' | format(mark.percent) }}%"
+                title="{{ mark.label }} {{ mark.at }}"></span>
+          {% endfor %}
+        </div>
+        <div class="trace-legend">
+          {% for slice in view.turn.stack.slices %}
+          <span class="trace-legend-item"><i class="swatch {{ slice.css }}"></i>{{ slice.label }}<b>{{ slice.actual }}</b></span>
+          {% endfor %}
+          {% for mark in view.turn.stack.marks %}
+          <span class="trace-legend-item dim"><i class="swatch tick"></i>{{ mark.label }}<b>{{ mark.at }}</b></span>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="trace-figure{{ ' over' if view.turn.tool_scale.over }}">
+        <div class="trace-figure-head">
+          <span class="trace-figure-title">工具 schema(与 messages 同一次请求,走 API 的 tools 字段)</span>
+          <span class="trace-figure-note">{{ view.turn.tool_scale.note }}</span>
+        </div>
+        <div class="trace-scale">
+          <div class="trace-stack">
+            {% for slice in view.turn.tool_scale.slices %}
+            <span class="{{ slice.css }}" style="width: {{ '%.3f' | format(slice.percent) }}%"
+                  title="{{ slice.label }} ≈ {{ slice.actual }} token"></span>
+            {% endfor %}
+          </div>
+          {% for mark in view.turn.tool_scale.marks %}
+          <span class="trace-tick {{ mark.css }}" style="left: {{ '%.3f' | format(mark.percent) }}%"
+                title="{{ mark.label }} {{ mark.at }}"></span>
+          {% endfor %}
+        </div>
+        {% if view.turn.tool_scale.over %}
+        <p class="trace-flag">
+          ⚠️ 工具 schema 比整个上下文投影还大,也超过了它自己的预算量级({{ view.turn.tool_scale.marks[0].at }} token)。
+          它每轮都随请求发出去,压缩动不了它 —— 想省这笔钱只能<strong>砍工具</strong>(合并 / 按域裁撤)。
+        </p>
+        {% endif %}
+      </div>
+
+      <div class="trace-segs">
+        {% for seg in view.turn.segments %}
+        <div class="trace-seg">
+          <div class="trace-seg-head">
+            <span class="trace-seg-name">{{ seg.order }} {{ seg.label }}</span>
+            <span class="trace-seg-num">{% if seg.budget %}{{ seg.actual }} / {{ seg.budget }} token{% else %}≈ {{ seg.actual }} token(没有预算可比){% endif %}</span>
+          </div>
+          <div class="meter{{ ' over' if seg.clipped else '' }}">
+            <span style="width: {{ '%.1f' | format(seg.ratio * 100) }}%"></span>
+          </div>
+          {% if seg.clipped %}
+          <div class="trace-flag">⚠️ 裁剪前约 {{ seg.pre_clip }} token —— 超出即截尾,发出去的是 {{ seg.actual }}</div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+
+      {% for note in view.turn.notes %}
+      <p class="warn" style="margin-top:12px;margin-bottom:0">{{ note }}</p>
+      {% endfor %}
+    </section>
+
+    {% if view.turn.parts %}
+    <section class="card">
+      <h2>系统提示由哪几段拼成</h2>
+      <details class="about">
+        <summary>为什么这三段排在末尾</summary>
+        <div class="about-body">
+          <p>第 ① 段不是一个整块,而是三段拼起来的(顺序固定)。人设与技能目录都排在末尾 ——
+            预算不够时被截掉的会是它们,所以这里把每一段的实际大小摊开。</p>
+        </div>
+      </details>
+      <table>
+        <thead><tr><th>段</th><th class="num">字符</th><th class="num">≈ token</th></tr></thead>
+        <tbody>
+          {% for part in view.turn.parts %}
+          <tr>
+            <td>{{ part.name }}{% if part.key == "runtime" %}<span class="tag" style="margin-left:6px">拼在同一条消息末尾</span>{% endif %}</td>
+            <td class="num">{{ part.chars }}</td>
+            <td class="num">{{ part.tokens }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+    {% endif %}
+
+    <div class="section-head">
+      <h2>逐条消息(发出去的就是这些)</h2>
+      <span class="section-note">点标题展开全文;默认展开系统提示</span>
+    </div>
+    <section class="card">
+      {# 过滤器:系统提示常有几 KB,会把"这一轮到底说了什么"淹掉 —— 一句话切过去。
+         服务端过滤,纯链接(不引 JS),并**保留正在看的那一轮**。 #}
+      <div class="segmented trace-filter" role="tablist">
+        {% for item in view.only_options %}
+        <a role="tab" aria-selected="{{ 'true' if item.on else 'false' }}"
+           href="{{ item.href }}" class="{{ 'on' if item.on else '' }}">
+          {{ item.label }}<span class="count">{{ item.count }}</span>
+        </a>
+        {% endfor %}
+      </div>
+      {% for msg in view.messages %}
+      <details class="trace-msg"{% if loop.first and view.only != 'talk' %} open{% endif %}>
+        <summary>
+          <span class="tag">{{ msg.index }}</span>
+          <span class="trace-role role-{{ msg.role }}">{{ msg.role_label }}</span>
+          <span class="tag draft">{{ msg.segment_label }}</span>
+          <span class="trace-tokens">≈ {{ msg.tokens }} token</span>
+          <span class="trace-preview">{{ msg.preview }}</span>
+        </summary>
+        <pre class="raw">{{ msg.content }}</pre>
+        {% if msg.reasoning %}
+        <p class="muted" style="margin:8px 0 4px">
+          这一条还带着<strong>思维链</strong>(它属于<strong>本轮的 transcript</strong>:轮内下一次请求必须带
+          这个字段,否则 API 返回 400 —— 但它不会进跨轮历史,见「对话段怎么取舍」):
+        </p>
+        <pre class="raw">{{ msg.reasoning }}</pre>
+        {% endif %}
+      </details>
+      {% endfor %}
+      {% if not view.messages %}
+      <p class="muted">这个过滤条件下没有消息。</p>
+      {% endif %}
+    </section>
+
+    {% endif %}
+
+  {# ================================================================ 规则 #}
+  {% elif view.tab == 'rules' %}
+
+    <div class="metric-grid">
+      <div class="metric">
+        <div class="metric-label">压缩触发线(写死,不随窗口变)</div>
+        <div class="metric-value">{{ view.totals.trigger }}<span class="metric-unit">token</span></div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">硬上限(装配时的天花板)</div>
+        <div class="metric-value">{{ view.totals.hard_max }}<span class="metric-unit">token</span></div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">token 估算口径</div>
+        <div class="metric-value" style="font-size:15px">字符数 ÷ 4 + 4</div>
+      </div>
+    </div>
+
+    {# ⭐ 用户 2026-10-14 的追问:"到多少 token 就会进行上下文压缩?"
+       —— 这些数字摆在一起最容易混着看,所以先把"谁真的会触发动作"讲清,再列七段规则。
+       ⚠️ 2026-10-17:原先并列的「总锁」已删除(它不参与任何判定),现在是三条线。
+       ⭐ D121 起多一条「模型的上下文窗口」(1M):它一摆上去,"怎么这么快就压缩"就自动回答了。 #}
+    <section class="card">
+      <h2>三条线各管什么({{ view.totals.trigger }} / {{ view.totals.hard_max }} / {{ view.totals.window }})</h2>
+      <p class="muted">
+        <strong>只有前两条会真的触发动作</strong>;模型窗口压根不是我们的闸。
+      </p>
+      <div class="trace-rules">
+        {% for line in view.budget_lines %}
+        <div class="trace-rule">
+          <div class="trace-rule-head">
+            <span class="trace-rule-order">{{ loop.index }}</span>
+            <span class="trace-rule-name">{{ line.name }}</span>
+            <span class="trace-rule-budget">{{ line.value }} token</span>
+          </div>
+          <div class="trace-rule-line">
+            <span class="trace-rule-label">管什么</span><span>{{ line.role }}</span>
+          </div>
+          <div class="trace-rule-line">
+            <span class="trace-rule-label">什么时候</span><span>{{ line.when }}</span>
+          </div>
+          {% if line.detail %}
+          <details class="about about-tight">
+            <summary>这条线的细节</summary>
+            <div class="about-body">{{ line.detail }}</div>
+          </details>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      <details class="about">
+        <summary>哪一条还没实现</summary>
+        <div class="about-body">
+          <p>⚠️ 设计稿里还写着一句"超硬上限 → 强制压缩 → 重投影" —— <strong>那一条今天没有实现</strong>:
+            超了只是把对话段收紧、并把这一轮标记成"该压缩",真正的压缩留到回合结束
+            (差异记在 <code>docs/记忆模块一致性审核.md</code> §2.3)。要按设计原文补齐,是一次独立改动。</p>
+        </div>
+      </details>
+    </section>
+
+    <section class="card">
+      <p class="muted">
+        每一轮发给模型的东西都由这些段拼出来:<strong>顺序固定、每段各有各的预算</strong>。
+        消息列表的实际顺序是:<strong>系统提示(身份 → 人格 → 技能目录)→ 压缩检查点
+        → 历史对话(只追加)→ 运行时上下文 → 记忆 → 证据 → 这一句 user</strong>。
+        检查点只在压过东西之后才存在(空着的时候一个字节都不占)。
+      </p>
+      {# ⚠️ 这里刻意**不用表格**:五列在手机上会把"怎么裁"挤出卡片外,
+         而每一条的内容(谁填的、怎么裁、为什么这么定)都是要读的句子,不是单元格。 #}
+      <div class="trace-rules">
+        {% for rule in view.rules %}
+        <div class="trace-rule">
+          <div class="trace-rule-head">
+            <span class="trace-rule-order">{{ rule.order }}</span>
+            <span class="trace-rule-name">{{ rule.name }}</span>
+            <span class="trace-rule-budget">{{ rule.budget }} token</span>
+          </div>
+          <div class="trace-rule-line">
+            <span class="trace-rule-label">谁来填</span><span>{{ rule.source }}</span>
+          </div>
+          <div class="trace-rule-line">
+            <span class="trace-rule-label">怎么裁</span><span>{{ rule.clipping }}</span>
+          </div>
+          {% if rule.note %}
+          <details class="about about-tight">
+            <summary>为什么这么定</summary>
+            <div class="about-body">{{ rule.note }}</div>
+          </details>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      <details class="about">
+        <summary>为什么易变的三段排在末尾</summary>
+        <div class="about-body">
+          <p>⭐ 前缀缓存命中的是"两次请求从头开始逐字节相同的那一段" —— 易变段只要排在历史前面,
+            后面所有历史都跟着变成未命中(实测跨轮命中 22.5% → 93.1%)。
+            所以上表的段号是<strong>记账顺序</strong>,不是消息里的先后(见 D122)。</p>
+        </div>
+      </details>
+      <details class="about">
+        <summary>六段上限之和装得进硬上限吗</summary>
+        <div class="about-body">
+          <p>进 messages 的<strong>六段</strong>上限之和是 {{ view.totals.budget_sum }}(若把另走
+            <code>tools</code> 字段的工具 schema 也算上,是 {{ view.totals.budget_sum_with_tools }})——
+            它<strong>装得进</strong>硬上限 {{ view.totals.hard_max }},余量
+            {{ view.totals.hard_max - view.totals.budget_sum }}。</p>
+          <p>⚠️ 六段各自的上限是<strong>理论最大值</strong>,实际几乎不可能同时吃满
+            (这一轮除对话段外的其余段加起来才几百 token)。真正会紧的只有对话段,而它用的是动态预算
+            <code>min(它, 硬上限 − 其余固定段)</code> —— 所以真到天花板动手,也只砍它一个。</p>
+          <p>要更早触发压缩、还是多留成本余量,调 <code>config.BUDGET_TOOLS</code> 或
+            <code>config.BUDGET_COMPACT_TRIGGER</code>(现在是 {{ view.totals.trigger }} token)即可(见 D134)。</p>
+          <p>⚠️ 2026-10-14(D121)之前这一组数是反的:五段之和 10700 越过硬上限 10000,
+            于是每一轮都被收一刀,而对话段只分到 4000 —— 重定标的过程与实测见
+            <code>docs/历史窗口重定标.md</code>。</p>
+        </div>
+      </details>
+    </section>
+
+    {# ⭐ 用户 2026-10-14 问:"【工具 schema 不在这张表里参与压缩】这句我没理解,是这部分内容不在
+       提示词里?那 LLM 怎么拿到这些内容?还是分两次调用 LLM?" —— 这句话确实容易被读成"模型看不到它"。
+       所以这里把**那一次请求的形状**直接画出来:它跟 messages 是同一次请求的另一个字段,
+       既不是"不在提示词里所以看不到",也不是"分两次调用"。 #}
+    <section class="card">
+      <h2>一次请求长什么样(工具 schema 到底在哪)</h2>
+      <p class="muted">
+        <strong>它和 messages 在同一次请求里,只是放在两个不同的字段中</strong>。
+        下面那本账数的只是 <code>messages</code> 那一格。
+      </p>
+      <pre class="raw">POST {base_url}/chat/completions          ← 一次调用,不是两次
+{
+  "model": "{{ view.current.model }}",
+  "messages": [ … 系统提示 / 记忆块 / 对话 … ],   ← 占用图左边那条;消息账数的是这里
+  "tools":    [ … 每个工具的名字、说明、参数表 … ],  ← 同一份请求的另一个字段;每轮固定,压缩动不了
+  "tool_choice": "auto",
+  "stream": true
+}</pre>
+      <ul class="trace-list">
+        <li><strong>模型两样都收得到</strong> —— 所以它既知道"聊了什么",也知道"自己能做什么"。
+          工具清单之所以不写成 messages 里的一段文字,是因为官方接口要求它走 <code>tools</code> 这个
+          <strong>结构化字段</strong>:接口靠它把"模型想调哪个工具、参数是什么"变成机器可读的
+          <code>tool_calls</code>。</li>
+        <li><strong>钱照付,只是不记在 messages 那本账上</strong> —— 它属于这一次请求的输入 token,
+          但每轮一模一样、删不得也压不动;并进 messages 的话,每一轮都会触发一次"该压缩了"(见 D95)。</li>
+        <li><strong>一轮里可能调用模型好几次</strong> —— 模型要求调工具时,服务端执行完把结果作为
+          <code>tool</code> 消息追加进 messages,<strong>再发一次</strong>同样的请求(同样带完整工具清单),
+          直到它给出最终答复。</li>
+        <li><strong>只有到顶收尾那一轮例外</strong> —— 工具额度用尽时把 <code>tools</code> 整个撤掉,
+          模型只能按已有结果成文(见 D101)。</li>
+      </ul>
+      <p class="disclaimer">
+        这一轮实际发出去多少,回<a href="/trace?tab=context">上下文</a>那一页看:那里两条刻度就是这两笔账。
+      </p>
+    </section>
+
+    <div class="two">
+      <section class="card">
+        <h2>记忆块里装了什么</h2>
+        <ol class="trace-list">
+          {% for key, why in view.memory_steps %}
+          <li><code>{{ key }}</code> {{ why }}</li>
+          {% endfor %}
+        </ol>
+      </section>
+      <section class="card">
+        <h2>对话段怎么取舍</h2>
+        <ul class="trace-list">
+          {% for line in view.conversation_rules %}<li>{{ line }}</li>{% endfor %}
+        </ul>
+        <details class="about">
+          <summary>工具 schema 在哪一段</summary>
+          <div class="about-body">
+            <p>工具 schema 不在上面那七段里 —— 但它<strong>并不是模型看不到的东西</strong>:
+              它和 messages 在<strong>同一次请求</strong>里,只是走 API 的 <code>tools</code> 字段
+              ({{ view.rules_tools.budget }} token 是为它预留的额度)。
+              ⭐ 它在请求里的位置是<strong>紧接系统提示之后</strong>({{ view.rules_tools.order }})——
+              「规则」那一页就是按这个顺序排的。</p>
+          </div>
+        </details>
+      </section>
+    </div>
+
+    <section class="card tinted">
+      <h2>现在这套规则跑在什么上面</h2>
+      <div class="chip-row">
+        <span class="tag">模型 {{ view.current.model }}</span>
+        <span class="tag">提供方 {{ view.current.provider }}</span>
+        <span class="tag">人格 {{ view.current.persona }}</span>
+        <span class="tag">技能 {{ view.current.skills }} 个</span>
+        <span class="tag">生效事实 {{ view.current.facts }} / 上限 {{ view.current.fact_limit }}</span>
+        <span class="tag">摘要 {{ view.current.summaries }} 条</span>
+      </div>
+      <p class="muted">
+        预算与顺序是<strong>常量</strong>(改它们要改代码);上面这几项是<strong>活的</strong> ——
+        在 <a href="/persona">人格页</a>改一个字、库里多一条事实,下一轮的上下文就不一样了。
+        这也是为什么「上下文」那一页显示的是<strong>落盘的那一份</strong>:现算出来的东西和当时发出去的长得一模一样,
+        却可能已经不是同一份。
+      </p>
+    </section>
+
+  {# ================================================================ 历史 #}
+  {% else %}
+
+    {% if not view.history %}
+    <p class="warn">
+      <strong>还没有任何一轮对话落在这里。</strong>
+      去 <a href="/chat">聊天</a> 说一句(或者跑 <code>python -m la --once "你好"</code>),
+      这里就会多一行 —— 每行都能点开看那一轮<strong>真正发出去</strong>的完整上下文。
+    </p>
+    {% else %}
+    <section class="card">
+      <p class="muted">
+        最近 {{ view.history | length }} 轮(最多保留 {{ view.keep }} 条,超出丢最旧的)。
+        点某一行的「看这一轮」,就到「上下文」那一页去看它当时发出去的那一份。
+      </p>
+      <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th>#</th><th>时间</th><th>会话</th><th class="num">轮次</th><th>入口</th>
+              <th class="num">投影</th><th class="num">+工具</th><th class="num">合计</th>
+              <th class="num">消息</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for item in view.history %}
+          <tr>
+            <td class="num">{{ item.index }}</td>
+            <td>{{ item.at }}</td>
+            <td>{{ item.session }}</td>
+            <td class="num">{{ item.turn }}</td>
+            <td>{{ item.surface_label }}</td>
+            <td class="num">{{ item.total }}</td>
+            <td class="num">{{ item.tools }}</td>
+            <td class="num">{{ item.grand_total }}</td>
+            <td class="num">{{ item.messages }}</td>
+            <td>
+              {% if item.index == view.index and view.turn %}
+              <span class="tag confirmed">正在看</span>
+              {% else %}
+              <a href="/trace?tab=context&i={{ item.index }}">看这一轮</a>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    </section>
+    {% endif %}
+
+  {% endif %}
+
+  <details class="about" style="margin-top:20px">
+    <summary>这一页的口径</summary>
+    <div class="about-body">
+      <p>⚠️ 这一页显示的<strong>就是当时发出去的那一份</strong>:每轮装配完,系统把 messages 原样写进
+        <code>{{ view.trace_file }}</code>(本地文件,不进 memory.db、不进事件日志)。
+        它不是重算出来的 —— 重算会漂移(检索结果、人格、技能目录都可能是之后的样子),
+        而漂移出来的东西与当时发出去的<strong>长得一模一样</strong>,那才是最难发现的谎。</p>
+      <p>纯读:这一页不调模型、不写任何东西,关掉 API 也照样打得开。
+        <strong>敏感事实在这里也仍然只是占位符</strong> —— "完整"指的是没有第二个版本,
+        不是把省略掉的信息补回来(要看内容请到 <a href="/memory">记忆</a> 页,或者直接看数据文件)。</p>
+      <p>轨迹是<strong>观测数据</strong>,不是"发生过的事":所以它只保留最近 {{ view.keep }} 轮,
+        也不会被摘要池收进去。</p>
+    </div>
+  </details>
+
+</div>
+{% endblock %}

@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{ title }}</title>
+<style>
+  :root{--ink:#1f2430;--dim:#6b7280;--line:#e5e7eb;--brand:#2563eb;--ok:#059669;--warn:#b45309;--bad:#b91c1c;--bg:#f6f7f9}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.75 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+  .wrap{max-width:760px;margin:0 auto;padding:16px 14px 64px}
+  h1{font-size:21px;margin:0 0 4px}
+  h2{font-size:17px;margin:0 0 6px}
+  .meta{color:var(--dim);font-size:13px;margin:0 0 14px}
+  .q{background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px;margin:0 0 14px;break-inside:avoid;page-break-inside:avoid}
+  .qhd{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px}
+  .no{display:inline-flex;min-width:26px;height:26px;padding:0 4px;border-radius:13px;background:var(--brand);color:#fff;align-items:center;justify-content:center;font-size:14px}
+  .subj{font-weight:600}
+  .kp{font-size:12px;color:var(--dim);border:1px solid var(--line);border-radius:999px;padding:1px 8px}
+  .flag{font-size:12px;color:#fff;background:var(--warn);border-radius:999px;padding:1px 8px}
+  .flag.bad{background:var(--bad)}
+  .stem{white-space:pre-wrap;margin:8px 0}
+  .fig{margin:10px 0;text-align:center}
+  .fig img{max-width:100%;border:1px solid var(--line);border-radius:8px;background:#fff}
+  .fig svg{max-width:min(340px,84vw);height:auto}
+  details.raw{margin:2px 0 8px;font-size:13px;color:var(--dim)}
+  details.raw summary{cursor:pointer;padding:4px 0}
+  details.raw img{max-width:100%;border:1px solid var(--line);border-radius:8px;background:#fff;margin-top:6px}
+  .fig figcaption{color:var(--dim);font-size:12px;margin-top:4px}
+  .nofig{color:var(--warn);font-size:13px;background:#fff7ed;border-left:3px solid var(--warn);padding:6px 10px;border-radius:6px;margin:8px 0}
+  textarea{width:100%;min-height:78px;border:1px dashed #c7ccd6;border-radius:10px;padding:10px;font:inherit;background:#fcfcfd}
+  .acts{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+  button{font:inherit;padding:8px 14px;border-radius:10px;border:1px solid var(--line);background:#fff;cursor:pointer}
+  button.on-ok{background:var(--ok);border-color:var(--ok);color:#fff}
+  button.on-no{background:var(--warn);border-color:var(--warn);color:#fff}
+  .sol{margin-top:12px;border-top:1px dashed var(--line);padding-top:10px}
+  .ans{font-size:17px;margin:6px 0}
+  .steps{margin:6px 0 6px 20px;padding:0}
+  .src{color:var(--dim);font-size:12px;margin:4px 0}
+  .stu{color:var(--dim);font-size:13px;margin:4px 0}
+  .warn{background:#fff7ed;border-left:3px solid var(--warn);padding:8px 10px;border-radius:6px;font-size:14px;margin:8px 0 0}
+  .dict{background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px;margin:18px 0}
+  .listen{border:1px solid #bfdbfe;background:#eff6ff;border-radius:10px;padding:8px 10px;margin:8px 0}
+  .listen .lk{font-size:13px;color:#1d4ed8;font-weight:600}
+  .listen audio{margin:6px 0 2px}
+  .listen .lcap{color:var(--dim);font-size:12px;margin:0}
+  audio{width:100%;margin:8px 0}
+  #code{width:100%;min-height:56px;font:13px/1.6 ui-monospace,Consolas,monospace}
+  .foot{color:var(--dim);font-size:12px;text-align:center;margin-top:18px}
+  @media print{
+    body{background:#fff}
+    .acts,#copy,audio{display:none}
+    /* 打印版听不到声音 —— 但**必须看得见"这题要听"**,否则一张纸会把听力题变成哑题 */
+    .listen{border:1px dashed #999;background:#fff}
+    .listen .lk::after{content:"(打印版没有声音,请在手机上打开这一页)"}
+    .sol{display:block !important}
+    .q{border:none;border-bottom:1px solid #bbb;border-radius:0;padding:0 0 12px}
+    .wr{color:#111}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>{{ title }}</h1>
+  <p class="meta">{{ model.day }} · 共 {{ model["items"]|length }} 道 · 预计 {{ minutes }} 分钟 · 模板 {{ version }}{% if model.generated_at %} · 生成于 {{ model.generated_at }}{% endif %}</p>
+
+  {% for it in model.items %}
+  <section class="q" data-unit="{{ it.unit_ids|join(',') }}">
+    <div class="qhd">
+      <span class="no">{{ it.index }}</span>
+      <span class="subj">{{ it.subject }}</span>
+      {% for kp in it.kps %}<span class="kp">{{ kp }}</span>{% endfor %}
+      {% if it.blocked %}<span class="flag bad">⚠ 答案待确认</span>{% endif %}
+      {% if not it.figure_uri and it.figure_note %}<span class="flag">⚠ {{ it.figure_note }}</span>{% endif %}
+    </div>
+
+    {% if it.figure_svg %}
+    <figure class="fig">{{ it.figure_svg|safe }}<figcaption>{{ it.figure_note or "图形:按题目参数重绘" }}</figcaption></figure>
+    {% if it.figure_uri %}
+    <details class="raw"><summary>对照原图</summary><img src="{{ it.figure_uri }}" alt="原题图形裁剪"></details>
+    {% endif %}
+    {% elif it.figure_uri %}
+    <figure class="fig"><img src="{{ it.figure_uri }}" alt="题目图形"><figcaption>{{ it.figure_note or "题目图形" }}</figcaption></figure>
+    {% endif %}
+
+    {% if it.audio_uri %}
+    {# 🔊 这道题的声音是**录入时就绑好的**(见 la/domain/study/audio.py):
+       出卷只是把它内联进来,所以每次复习听到的都是同一段,不重新合成 #}
+    <div class="listen">
+      <div class="lk">🔊 {{ it.audio_label or "听音频" }}</div>
+      <audio controls preload="metadata" src="{{ it.audio_uri }}"></audio>
+      <p class="lcap">{{ it.audio_note }}</p>
+    </div>
+    {% elif it.audio_note %}
+    <p class="nofig">🔇 {{ it.audio_note }}</p>
+    {% endif %}
+
+    <p class="stem">{{ it.stem }}</p>
+    <textarea placeholder="在这里写你的解答…"></textarea>
+
+    <div class="acts">
+      <button data-act="show">看答案</button>
+      <button data-act="ok">会了</button>
+      <button data-act="no">忘了</button>
+    </div>
+
+    <div class="sol" hidden>
+      {% if it.blocked %}
+        <p class="warn">这一题的答案**先别当标准答案用**:{{ it.conflict_note or "题干或图形不全,模型无法给出可靠答案。" }}</p>
+      {% endif %}
+      <p class="ans"><b>{{ "参考答案" if not it.blocked else "模型/照片上的答案(未确认)" }}:</b>{{ it.answer or "(还没有答案)" }}</p>
+      {% if it.steps %}<ol class="steps">{% for s in it.steps %}<li>{{ s }}</li>{% endfor %}</ol>{% endif %}
+      <p class="src">来源:{{ it.answer_label }}</p>
+      {% if it.student_answer %}<p class="stu">照片上孩子原来的作答:{{ it.student_answer }}</p>{% endif %}
+      {% if it.conflict_note and not it.blocked %}<p class="warn">{{ it.conflict_note }}</p>{% endif %}
+    </div>
+  </section>
+  {% endfor %}
+
+  {% if model.audio_uri %}
+  <section class="dict">
+    <h2>听写({{ model.dictation_words|length }} 个词,读两遍、每题之间停顿)</h2>
+    <audio controls preload="metadata" src="{{ model.audio_uri }}"></audio>
+    <p class="meta" style="margin:4px 0 0">{{ model.audio_note }}</p>
+    <p class="meta" style="margin:4px 0 0">词表:{{ model.dictation_words|join("、") }}</p>
+  </section>
+  {% endif %}
+
+  <section class="dict">
+    <h2>做完啦?把下面这段发回微信</h2>
+    <textarea id="code" readonly></textarea>
+    <div class="acts"><button id="copy">复制结果</button></div>
+  </section>
+
+  {% if model.extra_notes %}
+  <section class="dict">
+    <h2>这一卷的说明</h2>
+    <ul class="steps">{% for note in model.extra_notes %}<li>{{ note }}</li>{% endfor %}</ul>
+  </section>
+  {% endif %}
+
+  <p class="foot">{{ model.footer or "答案由模型独立解出并标注了来源;图形为原题照片裁剪。" }}</p>
+</div>
+
+<script>
+  var results = {};
+  function cards() { return document.querySelectorAll(".q"); }
+  document.addEventListener("click", function (ev) {
+    var button = ev.target.closest ? ev.target.closest("button") : null;
+    if (button && button.dataset && button.dataset.act) {
+      var card = button.closest(".q");
+      var key = card.dataset.unit || String([].indexOf.call(cards(), card));
+      var act = button.dataset.act;
+      if (act === "show") {
+        var box = card.querySelector(".sol");
+        box.hidden = !box.hidden;
+        button.textContent = box.hidden ? "看答案" : "收起答案";
+      } else {
+        results[key] = act;
+        card.querySelectorAll("button[data-act=ok],button[data-act=no]").forEach(function (item) {
+          item.className = item === button ? (act === "ok" ? "on-ok" : "on-no") : "";
+        });
+      }
+      render();
+      return;
+    }
+    if (button && button.id === "copy") {
+      var target = document.getElementById("code");
+      target.select();
+      if (navigator.clipboard) { navigator.clipboard.writeText(target.value); }
+      button.textContent = "已选中,长按复制";
+    }
+  });
+  function render() {
+    var ok = 0, no = 0, again = [];
+    cards().forEach(function (card, index) {
+      var verdict = results[card.dataset.unit || String(index)];
+      if (verdict === "ok") { ok++; }
+      else if (verdict === "no") { no++; again.push(index + 1); }
+    });
+    var lines = ["【错题卷回执】{{ model.day }}", "会了 " + ok + " 道 / 忘了 " + no + " 道"];
+    if (again.length) { lines.push("需要再讲的:第 " + again.join("、") + " 题"); }
+    lines.push("学生:{{ model.who }}");
+    document.getElementById("code").value = lines.join("\n");
+  }
+  render();
+</script>
+</body>
+</html>

@@ -1,0 +1,543 @@
+/* ============================================================================
+   笔记 · 视觉层(2026-11-08 第二版,对齐账本)
+   ----------------------------------------------------------------------------
+   为什么要对齐账本(D164 那套):
+     1. 用户点名"喜欢账本页的设计风格" —— 同一个应用里两页不能是两种语言;
+     2. 账本是**数据页**:20px 卡、柔和阴影、胶囊按钮与筛选片、14px/600 控件;
+     3. 笔记是**文本页**,但外壳、间距、控件应当同源,读者才不用重新学习。
+
+   与第一版的差别(用户反馈:"显示范围过小,日记里都是文本"):
+     * 去掉左侧「本子」竖栏,改成账本那样的**筛选片**一行 —— 正文一下子宽了 230px;
+     * 页面最大宽度 1120 → 1400,正文纸面 56em(约 56 个汉字/行);
+     * 正文 15 → 16.5px、行高 1.95,标题 27px;
+     * 「整页阅读」:?focus=1 时隐藏列表,正文铺满。
+   ========================================================================== */
+
+.notes {
+  --nt-radius: 20px;
+  --nt-pad: 22px;
+  --nt-hair: 1px solid var(--card-line);
+  --nt-soft: 0 1px 2px rgba(15, 20, 40, 0.04), 0 12px 30px rgba(15, 20, 40, 0.06);
+  --nt-num: ui-rounded, "SF Pro Rounded", -apple-system, "PingFang SC", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  .notes {
+    --nt-soft: 0 1px 2px rgba(0, 0, 0, 0.5), 0 14px 34px rgba(0, 0, 0, 0.55);
+  }
+}
+/* ⚠️ 必须带 .page:app.css 的 .page.wide 是 (0,2,0),单写 .notes 压不住它 */
+.page.notes { max-width: 1400px; }
+
+/* ---------------------------------------------------------------- 页头 */
+.nt-top {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.nt-heading h1 {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+.nt-sub {
+  margin: 6px 0 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  color: var(--fg-2);
+  font-size: 13.5px;
+}
+.nt-dot { color: var(--fg-3); margin: 0 6px; }
+.nt-tools { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+/* ---------------------------------------------------------------- 控件(照账本) */
+.nt-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 16px;
+  border-radius: var(--r-full);
+  border: 1px solid var(--card-line);
+  background: var(--bg-elevated);
+  color: var(--fg);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: transform 0.12s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+.nt-btn svg { width: 17px; height: 17px; }
+.nt-btn:hover { transform: translateY(-1px); box-shadow: var(--nt-soft); }
+.nt-btn:active { transform: translateY(0) scale(0.985); }
+.nt-btn.primary {
+  border-color: transparent;
+  background: var(--accent-grad);
+  color: #fff;
+  box-shadow: 0 6px 18px rgba(36, 74, 64, 0.28);
+}
+.nt-btn.ghost { background: transparent; color: var(--fg-2); }
+.nt-btn.ghost:hover { background: var(--bg-fill-2); color: var(--fg); }
+.nt-btn.small { padding: 7px 12px; font-size: 13px; }
+/* ⚠️ 不叫 .danger:app.css 里有 button.danger,会把按钮刷成淡红底 */
+.nt-btn.nt-danger { color: var(--red); border-color: rgba(255, 59, 48, 0.28); background: transparent; }
+.nt-btn.nt-danger:hover { background: var(--tint-red-bg); }
+
+.nt-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 38px;
+  padding: 0 14px;
+  border-radius: var(--r-full);
+  border: 1px solid var(--card-line);
+  background: var(--bg-elevated);
+  transition: box-shadow 0.18s ease, border-color 0.18s ease;
+}
+.nt-search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--tint-accent-bg); }
+.nt-search svg { width: 16px; height: 16px; flex: 0 0 auto; color: var(--fg-3); }
+.nt-search input {
+  width: 180px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 13.5px;
+  outline: none;
+}
+.nt-search input:hover { background: transparent; }
+
+/* ---------------------------------------------------------------- 本子筛选片 */
+.nt-chips-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.nt-chips {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 2px 2px 0;
+}
+.nt-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 auto;
+  padding: 7px 14px;
+  border-radius: var(--r-full);
+  background: var(--bg-fill);
+  color: var(--fg-2);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 0.16s ease, color 0.16s ease;
+}
+.nt-chip:hover { background: var(--bg-fill-2); color: var(--fg); }
+.nt-chip.on { background: var(--tint-accent-bg); color: var(--accent); }
+.nt-chip-n {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--fg-3);
+  font-variant-numeric: tabular-nums;
+}
+.nt-chip.on .nt-chip-n { color: var(--accent); }
+.nt-inbox-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--orange); }
+.nt-chip.dashed { background: transparent; border: 1px dashed var(--line); color: var(--fg-3); cursor: pointer; }
+.nt-chip.dashed:hover { color: var(--fg); border-color: var(--fg-3); }
+
+.nt-new { position: relative; flex: 0 0 auto; padding-top: 2px; }
+.nt-new > summary { list-style: none; }
+.nt-new > summary::-webkit-details-marker { display: none; }
+.nt-new-form {
+  position: absolute;
+  right: 0;
+  top: 40px;
+  z-index: 8;
+  width: 258px;
+  padding: 10px;
+  background: var(--bg-elevated);
+  border: var(--nt-hair);
+  border-radius: 14px;
+  box-shadow: var(--shadow-float);
+}
+.nt-new-where { margin: 0 0 8px; font-size: 11.5px; line-height: 1.5; color: var(--fg-3); }
+.nt-new-line { display: flex; gap: 6px; }
+.nt-new-line input {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+  padding: 7px 10px;
+  border: 1px solid var(--card-line);
+  border-radius: var(--r-sm);
+  background: var(--bg-tertiary);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+}
+
+/* ---------------------------------------------------------------- 两张卡 */
+.nt-shell {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  gap: 16px;
+  height: calc(100dvh - 232px);
+  min-height: 520px;
+  align-items: stretch;
+}
+.nt-shell.focus { grid-template-columns: minmax(0, 1fr); }
+.nt-shell.focus .nt-list { display: none; }
+
+.nt-list, .nt-read {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg-elevated);
+  border: var(--nt-hair);
+  border-radius: var(--nt-radius);
+  box-shadow: var(--nt-soft);
+  overflow: hidden;
+}
+.nt-read { padding: 0; }
+
+/* ---------------------------------------------------------------- 列表 */
+.nt-pane-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 16px 18px 12px;
+  border-bottom: var(--nt-hair);
+}
+.nt-pane-title { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
+.nt-pane-note { margin-left: auto; font-size: 12.5px; color: var(--fg-2); font-variant-numeric: tabular-nums; }
+.nt-clear { font-size: 12.5px; color: var(--accent); text-decoration: none; }
+.nt-clear:hover { text-decoration: underline; }
+
+.nt-list-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 8px 10px 16px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--fg-4) transparent;
+}
+.nt-day {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 12px 10px 6px;
+}
+.nt-day-label { font-size: 12.5px; font-weight: 700; color: var(--fg-2); }
+.nt-day-n { font-size: 11.5px; color: var(--fg-3); font-variant-numeric: tabular-nums; }
+
+.nt-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  color: inherit;
+  text-decoration: none;
+  transition: background 0.14s ease;
+}
+.nt-item:hover { background: var(--bg-fill-2); }
+.nt-item.on { background: var(--tint-accent-bg); }
+.nt-item-title { font-size: 14px; font-weight: 600; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nt-item-peek {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--fg-2);
+}
+.nt-item-folder { margin-top: 2px; font-size: 11px; color: var(--fg-3); }
+
+/* ---------------------------------------------------------------- 正文 */
+.nt-read-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 26px;
+  border-bottom: var(--nt-hair);
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+.nt-back { display: none; font-size: 12.5px; font-weight: 600; color: var(--fg-2); text-decoration: none; }
+.nt-back:hover { color: var(--accent); }
+.nt-crumbs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--fg-2);
+}
+.nt-crumbs a { color: var(--fg-2); text-decoration: none; }
+.nt-crumbs a:hover { color: var(--accent); }
+.nt-read-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+.nt-chars { font-size: 12px; color: var(--fg-3); font-variant-numeric: tabular-nums; }
+.nt-icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  border: 1px solid var(--card-line);
+  color: var(--fg-2);
+  text-decoration: none;
+  font-size: 14px;
+  line-height: 1;
+}
+.nt-icon-btn:hover { background: var(--bg-fill-2); color: var(--fg); }
+
+.nt-form {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  padding: 6px 26px 0;
+}
+.nt-sheet {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  width: 100%;
+  max-width: 56em;
+  margin: 0 auto;
+}
+/* 整页阅读时再放宽一点:此时没有列表,纸面可以到 64em(约 62 个汉字/行) */
+.nt-shell.focus .nt-sheet { max-width: 64em; }
+/* 特异性:app.css 的 input[type="text"] / textarea:focus 带 (0,1,1) */
+.nt-form input.nt-title {
+  flex: 0 0 auto;
+  width: 100%;
+  padding: 16px 0 12px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 27px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+  outline: none;
+}
+.nt-form input.nt-title:hover,
+.nt-form input.nt-title:focus { background: transparent; border-color: transparent; box-shadow: none; }
+.nt-title::placeholder { color: var(--fg-4); }
+
+.nt-form textarea.nt-body {
+  flex: 1 1 auto;
+  min-height: 220px;
+  padding: 0 0 20px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 16.5px;
+  line-height: 1.95;
+  outline: none;
+  resize: none;
+  scrollbar-width: thin;
+}
+.nt-form textarea.nt-body:hover,
+.nt-form textarea.nt-body:focus { background: transparent; border-color: transparent; box-shadow: none; }
+.nt-body::placeholder { color: var(--fg-4); }
+
+.nt-read-foot {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 26px 16px;
+  border-top: var(--nt-hair);
+  flex-wrap: wrap;
+}
+.nt-move { display: flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: nowrap; }
+.nt-move label { flex: 0 0 auto; white-space: nowrap; font-size: 12.5px; color: var(--fg-2); }
+.nt-move select {
+  max-width: 220px;
+  padding: 6px 10px;
+  border: 1px solid var(--card-line);
+  border-radius: var(--r-sm);
+  background: var(--bg-tertiary);
+  color: var(--fg);
+  font: inherit;
+  font-size: 12.5px;
+}
+.nt-danger { margin-left: auto; position: relative; }
+.nt-danger > summary {
+  list-style: none;
+  padding: 7px 12px;
+  border-radius: var(--r-full);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg-3);
+  cursor: pointer;
+}
+.nt-danger > summary::-webkit-details-marker { display: none; }
+.nt-danger > summary:hover { color: var(--red); background: var(--tint-red-bg); }
+.nt-danger form {
+  position: absolute;
+  right: 0;
+  bottom: 38px;
+  z-index: 8;
+  padding: 10px;
+  background: var(--bg-elevated);
+  border: var(--nt-hair);
+  border-radius: 14px;
+  box-shadow: var(--shadow-float);
+  white-space: nowrap;
+}
+
+.nt-extra {
+  flex: 0 0 auto;
+  margin: 0 26px 14px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--card-line);
+}
+.nt-extra > summary { list-style: none; font-size: 12px; color: var(--fg-3); cursor: pointer; }
+.nt-extra > summary::-webkit-details-marker { display: none; }
+.nt-extra > summary:hover { color: var(--fg-2); }
+.nt-extra ul { margin: 8px 0 0; padding: 0; list-style: none; }
+.nt-extra li { display: flex; gap: 10px; padding: 2px 0; font-size: 12px; color: var(--fg-3); font-variant-numeric: tabular-nums; }
+.nt-folder-edit { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.nt-folder-edit form { display: flex; gap: 8px; }
+.nt-folder-edit input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--card-line);
+  border-radius: var(--r-sm);
+  background: var(--bg-tertiary);
+  color: var(--fg);
+  font: inherit;
+  font-size: 12.5px;
+}
+
+/* ---------------------------------------------------------------- 空态与提示 */
+.nt-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--fg-3);
+}
+.nt-empty.tall { flex: 1 1 auto; }
+.nt-empty svg { width: 62px; height: 62px; opacity: 0.32; }
+.nt-empty-title { margin: 0; font-size: 14px; font-weight: 600; color: var(--fg-2); }
+.nt-empty-sub { margin: 0 0 6px; max-width: 260px; font-size: 12.5px; line-height: 1.6; }
+
+.nt-flash {
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  font-size: 13px;
+  background: var(--tint-accent-bg);
+  color: var(--accent);
+}
+.nt-flash.err { background: var(--tint-red-bg); color: var(--red); }
+
+/* ---------------------------------------------------------------- 窄屏 */
+@media (max-width: 1180px) {
+  .nt-shell { grid-template-columns: 270px minmax(0, 1fr); }
+}
+@media (max-width: 900px) {
+  /* 手机页头:标题一层;下面一行是「搜索(可缩)+ 回收站 + 写一条」。
+     ⚠️ 必须 nowrap:允许换行时搜索的自动基准宽度会把「写一条」挤到第三行。 */
+  .nt-heading { margin-bottom: 10px; }
+  .nt-chips-row { margin-bottom: 10px; }
+  .nt-chips {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    scrollbar-width: none;
+  }
+  .nt-chips::-webkit-scrollbar { display: none; }
+  .nt-new-where { display: none; }
+  .nt-tools { width: 100%; flex-wrap: nowrap; gap: 8px; }
+  .nt-search { flex: 1 1 auto; min-width: 0; padding: 0 12px; }
+  .nt-search input { width: 100%; min-width: 0; }
+  .nt-tools .nt-btn { flex: 0 0 auto; padding: 10px 13px; }
+  .nt-trash-label { display: none; }
+  .nt-trash { width: 40px; padding: 0; }
+  .nt-shell {
+    display: block;
+    height: auto;
+    min-height: 0;
+    gap: 0;
+  }
+  .nt-list, .nt-read { display: none; }
+  .nt-shell:not(.has-selection):not(.composing) .nt-list { display: flex; }
+  .nt-shell.has-selection .nt-read,
+  .nt-shell.composing .nt-read { display: flex; }
+  .nt-back { display: inline-flex; }
+  .nt-read-head { padding: 12px 16px; }
+  .nt-form { padding: 4px 16px 0; }
+  .nt-read-foot { padding: 10px 16px 14px; }
+  .nt-extra { margin: 0 16px 12px; }
+  .nt-form input.nt-title { font-size: 22px; }
+  .nt-form textarea.nt-body { font-size: 16px; min-height: 40dvh; }
+  .nt-chars { display: none; }
+  .nt-danger { margin-left: 0; }
+}
+
+/* ---------------------------------------------------------------- 本子操作 */
+.nt-folder-menu { position: relative; flex: 0 0 auto; padding-top: 2px; }
+.nt-folder-menu > summary { list-style: none; }
+.nt-folder-menu > summary::-webkit-details-marker { display: none; }
+.nt-menu {
+  position: absolute;
+  right: 0;
+  top: 40px;
+  z-index: 9;
+  width: 286px;
+  padding: 12px;
+  background: var(--bg-elevated);
+  border: var(--nt-hair);
+  border-radius: 14px;
+  box-shadow: var(--shadow-float);
+}
+.nt-menu-title { margin: 0 0 3px; font-size: 13px; font-weight: 700; word-break: break-all; }
+.nt-menu-meta { margin: 0 0 10px; font-size: 11.5px; color: var(--fg-3); }
+.nt-menu-line { display: flex; gap: 6px; margin: 0 0 8px; }
+.nt-menu-line input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--card-line);
+  border-radius: var(--r-sm);
+  background: var(--bg-tertiary);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+}
+.nt-menu-line .nt-btn { flex: 0 0 auto; }
+.nt-menu-hint { display: block; margin: 0; font-size: 11.5px; line-height: 1.55; color: var(--fg-3); }
+.nt-btn[disabled] { opacity: 0.45; cursor: not-allowed; box-shadow: none; transform: none; }
+.nt-empty-del { display: flex; flex-direction: column; align-items: center; gap: 6px; margin-top: 14px; }

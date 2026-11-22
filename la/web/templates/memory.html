@@ -1,0 +1,253 @@
+{% extends "base.html" %}
+{% block title %}记忆 · 默{% endblock %}
+{% block body %}
+<div class="page wide">
+
+  <div class="page-head">
+    <div class="head-main">
+      <h1>记忆</h1>
+      <p class="sub">从最原始的归档,到模型这一轮真正读到的那一段 —— 每一层都摊开给你看。</p>
+    </div>
+    <div class="head-actions">
+      <span class="page-meta">生成于 {{ view.generated_at }}</span>
+    </div>
+  </div>
+
+  {% if flash %}
+  <p class="warn">{{ flash }}</p>
+  {% endif %}
+  {% if ok %}
+  <p class="ok">{{ ok }}</p>
+  {% endif %}
+  {% if err %}
+  <p class="warn">{{ err }}</p>
+  {% endif %}
+
+  {% if view.total_active_facts == 0 and view.total_summaries == 0 %}
+  <p class="warn">
+    还没有任何<strong>长期记忆</strong> —— 事实与摘要都是空的。
+    这意味着助手<strong>记不住任何跨对话的事</strong>。
+    去 <a href="/chat">聊天</a> 说一句「记住:我不吃香菜」就会写进一条事实;
+    或者攒够几轮对话后在聊天里说「压缩上下文」,或点下面的「立即压缩上下文」把事件压成摘要。
+  </p>
+  {% endif %}
+
+  <div class="metric-grid">
+    <div class="metric">
+      <div class="metric-label">事件</div>
+      <div class="metric-value">{{ view.total_events }}<span class="metric-unit">条</span></div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">摘要</div>
+      <div class="metric-value">{{ view.total_summaries }}<span class="metric-unit">条</span></div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">生效事实</div>
+      <div class="metric-value">{{ view.total_active_facts }}<span class="metric-unit">条</span></div>
+    </div>
+  </div>
+
+  {% for layer in view.layers %}
+  <div class="section-head">
+    <h2>
+      <span class="tag">{{ layer.code }}</span>
+      {{ layer.name }}
+    </h2>
+    {% if layer.rebuildable %}
+      <span class="tag confirmed" title="这一层丢了可以从下层重放重建">可重建</span>
+    {% else %}
+      <span class="tag draft" title="这一层是事实源,删了就真没了">不可重建</span>
+    {% endif %}
+  </div>
+  <section class="card">
+    {% if layer.stats %}
+    <div class="chip-row">
+      {% for label, value in layer.stats %}<span class="tag">{{ label }} {{ value }}</span>{% endfor %}
+    </div>
+    {% endif %}
+
+    {# 一句话结论(目前只有 L5 用):这一层最要紧的那件事,摆在表格上面 #}
+    {% if layer.headline %}
+    <p class="layer-headline">{{ layer.headline }}</p>
+    {% endif %}
+
+    {# ⭐ 2026-11-21:L5 就是「上下文预算与压缩」这一层 —— 手动压缩按钮放这里最对路。
+       点击本身就是确认;结果以 ok/err 回到本页顶部。 #}
+    {% if layer.code == "L5" %}
+    <div style="margin:12px 0;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <form method="post" action="/context/compact">
+        <input type="hidden" name="_idem" value="{{ idem() }}">
+        <input type="hidden" name="next" value="/memory">
+        <button class="ghost small" type="submit">立即压缩上下文</button>
+      </form>
+      <span class="muted" style="font-size:12px">
+        压掉最旧的一段,保留最近约 20%;原始事件仍在归档,摘要以后仍可检索。
+      </span>
+    </div>
+    {% endif %}
+
+    <details class="about">
+      <summary>这一层是什么 · 存在哪</summary>
+      <div class="about-body">
+        {# ⚠️ 说明里写着 **粗体** 与 `代码`,纯文本渲染会把星号原样吐出来 ——
+           走聊天页同一套安全 markdown 渲染(先转义再白名单解析)。 #}
+        {{ render_markdown(layer.note) | safe }}
+        <p>位置:<code>{{ layer.source }}</code></p>
+      </div>
+    </details>
+
+    {% if layer.empty %}
+      <div class="empty">
+        <span class="empty-mark">·</span>
+        <span class="empty-title">这一层现在是空的</span>
+        <div class="empty-sub">{{ render_markdown(layer.empty_hint) | safe }}</div>
+      </div>
+    {% elif layer.raw %}
+      <pre class="raw">{{ layer.raw }}</pre>
+    {% elif layer.code == "L2" and layer.items %}
+      {# ⭐ 摘要不按表格画:正文是"事项 / 事实 / 偏好 / 待办 / 锚点"几个字段拼起来的,
+         整块塞进一格只能挤成一坨。这一条一块:
+           第一行 = 标题(编号 · 时段 · 类别 · 热度/看过)
+           第二行 = 内容(事项预览,最多两行)
+           点开 = 其余字段逐条列出。 #}
+      <div class="summary-list">
+        {% for s in layer.items %}
+        <details class="summary-item">
+          <summary>
+            <span class="si-head">
+              <span class="si-id">{{ s.id }}</span>
+              <span class="si-when">{{ s.when }}</span>
+              <span class="tag">{{ s.category }}</span>
+              <span class="si-stats">热度 {{ s.heat }} · 看过 {{ s.visits }} 次</span>
+            </span>
+            <span class="si-peek">{{ render_inline(s.preview) | safe }}</span>
+          </summary>
+          <div class="si-body">
+            {% for sec in s.sections %}
+            <div class="si-sec">
+              <span class="si-key">{{ sec.key }}</span>
+              <span class="si-val">
+                {%- if sec.key == "锚点" -%}
+                  <span class="si-chips">
+                  {%- for entry in sec.entries %}<span class="tag">{{ entry }}</span>{% endfor -%}
+                  </span>
+                {%- else -%}
+                  <ul class="si-list">
+                    {%- for entry in sec.entries %}<li>{{ render_inline(entry) | safe }}</li>{% endfor -%}
+                  </ul>
+                {%- endif -%}
+              </span>
+            </div>
+            {% endfor %}
+            <div class="si-sec">
+              <span class="si-key">事件</span>
+              <span class="si-val si-range">{{ s.range }}</span>
+            </div>
+          </div>
+        </details>
+        {% endfor %}
+      </div>
+    {% elif layer.code == "L3" %}
+      {# L3 是唯一**能人工动手**的一层:每行带「停用/恢复」与「改口」。
+         删除在这里是软删除(active=0):不再进上下文,但行留在库里、能撤销、能追查。 #}
+      {# 行少就不套滚动容器:滚动会把最后几行藏起来(L5 的预算表正好九行,而 L3 常常只有几条) #}
+      {% if layer.rows|length > 12 %}<div class="table-scroll">{% endif %}
+      <table>
+        <thead><tr>{% for col in layer.columns %}<th>{{ col }}</th>{% endfor %}<th>人工动作</th></tr></thead>
+        <tbody>
+        {% for row in layer.rows %}
+          <tr>
+            {% for cell in row %}
+              <td{% if cell == "✗ 被挤掉" %} class="warn-cell"{% endif %}>{{ cell }}</td>
+            {% endfor %}
+            <td class="fact-actions">
+              {% set fid = row[0] | replace("#", "") %}
+              {% if row[2] == "生效中" %}
+                <form method="post" action="/memory/facts/{{ fid }}/deactivate">
+                  <input type="hidden" name="_idem" value="{{ idem() }}">
+                  <button class="danger small" type="submit">停用</button>
+                </form>
+              {% else %}
+                <form method="post" action="/memory/facts/{{ fid }}/restore">
+                  <input type="hidden" name="_idem" value="{{ idem() }}">
+                  <button class="ghost small" type="submit">恢复生效</button>
+                </form>
+              {% endif %}
+              <details class="fact-edit">
+                <summary class="ghost small">改口</summary>
+                <form method="post" action="/memory/facts/{{ fid }}/correct" class="fact-edit-form">
+                  <input type="hidden" name="_idem" value="{{ idem() }}">
+                  <input type="text" name="content" placeholder="改成…(会过准入闸)">
+                  <button class="ghost small" type="submit">提交</button>
+                </form>
+              </details>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% if layer.rows|length > 12 %}</div>{% endif %}
+    {% elif layer.code == "L3c" %}
+      {# ⭐ 2026-10-25:待人工放行的那几行必须有按钮 —— 用户原话"网页端没有审核放行的按钮"。
+         放行 = 直接写进 facts(留事件与可撤销回执);拒收 = 不再入库。
+         按钮只出现在 status=review 的行上:pending 还在等裁决,
+         admitted / rejected / duplicate 都已经处理完了。 #}
+      {% set has_review = "review" in layer.row_actions %}
+      {% if layer.rows|length > 12 %}<div class="table-scroll">{% endif %}
+      <table>
+        <thead><tr>{% for col in layer.columns %}<th>{{ col }}</th>{% endfor %}{% if has_review %}<th>人工动作</th>{% endif %}</tr></thead>
+        <tbody>
+        {% for row in layer.rows %}
+          <tr>
+            {% for cell in row %}<td>{{ cell }}</td>{% endfor %}
+            {% if has_review %}
+            <td class="fact-actions">
+              {% if layer.row_actions[loop.index0] == "review" %}
+                {% set cid = row[0] | replace("#", "") %}
+                <form method="post" action="/memory/candidates/{{ cid }}/approve">
+                  <input type="hidden" name="_idem" value="{{ idem() }}">
+                  <button class="ghost small" type="submit">放行</button>
+                </form>
+                <form method="post" action="/memory/candidates/{{ cid }}/reject">
+                  <input type="hidden" name="_idem" value="{{ idem() }}">
+                  <button class="danger small" type="submit">拒收</button>
+                </form>
+              {% endif %}
+            </td>
+            {% endif %}
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% if layer.rows|length > 12 %}</div>{% endif %}
+    {% else %}
+      {% if layer.rows|length > 12 %}<div class="table-scroll">{% endif %}
+      <table>
+        <thead><tr>{% for col in layer.columns %}<th>{{ col }}</th>{% endfor %}</tr></thead>
+        <tbody>
+        {% for row in layer.rows %}
+          <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% if layer.rows|length > 12 %}</div>{% endif %}
+    {% endif %}
+  </section>
+  {% endfor %}
+
+  <details class="about" style="margin-top:20px">
+    <summary>事实为什么这么难写进去</summary>
+    <div class="about-body">
+      <p>⚠️ <strong>一条错的永久事实会污染之后每一轮对话。</strong>
+        所以这一层现在是<strong>两道闸</strong>:规则与模型只能<strong>提议</strong>(进 L3c 候选),
+        写进 facts 必须过<strong>准入闸</strong> —— 先做结构检查(空/残句/疑问句/超长/未来动作),
+        再由模型判它和已有事实是<strong>同一条、更准的一条,还是改了口</strong>;
+        判不出来就留在 L3c 等人放行。</p>
+      <p>人工在 L3 上能直接<strong>停用</strong>(不再进上下文,但行留在库里、可撤销、可追查)、
+        <strong>恢复</strong>、<strong>改口</strong>(改口同样要过闸)。这里的"删除"一律是软删除:
+        记忆<strong>不允许被静默篡改</strong> —— 每一次变更都留下一条事件与一条可撤销回执。</p>
+    </div>
+  </details>
+
+</div>
+{% endblock %}

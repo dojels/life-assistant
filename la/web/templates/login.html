@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>登录 · 默</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center;
+         font: 16px/1.5 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+         background: #f2f2f7; color: #1c1c1e; }
+  @media (prefers-color-scheme: dark) { body { background: #000; color: #f2f2f7; } }
+  main { width: min(420px, calc(100vw - 40px)); padding: 28px; border-radius: 18px;
+         background: color-mix(in srgb, Canvas 92%, transparent);
+         box-shadow: 0 12px 40px rgb(0 0 0 / 0.12); }
+  h1 { margin: 0 0 6px; font-size: 26px; font-weight: 700; }
+  h1 small { font-size: 12px; font-weight: 600; letter-spacing: .1em; opacity: .55; margin-left: 6px; }
+  p { margin: 0 0 18px; opacity: .72; font-size: 14px; }
+  .members { display: grid; gap: 8px; margin: 16px 0 4px; }
+  .member { display: flex; align-items: center; gap: 10px; padding: 12px 14px;
+            border: 1px solid #c7c7cc; border-radius: 12px; cursor: pointer; }
+  .member input { accent-color: #0a84ff; }
+  label { display: block; margin: 14px 0 6px; font-size: 14px; opacity: .8; }
+  input[type=password] { width: 100%; box-sizing: border-box; padding: 12px 14px;
+          font-size: 20px; letter-spacing: .4em; border-radius: 12px;
+          border: 1px solid #c7c7cc; background: Canvas; color: inherit; }
+  button { width: 100%; margin-top: 20px; padding: 13px; border: 0; border-radius: 12px;
+           font-size: 16px; font-weight: 600; background: #0a84ff; color: white; }
+  .error { margin-top: 15px; padding: 10px 12px; border-radius: 10px;
+           background: #ff3b301a; color: #d70015; font-size: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>默 <small>Mo</small></h1>
+  <p>Family Agent · 选一个成员,输入 6 位 PIN。</p>
+  <form method="post" action="/login">
+    <input type="hidden" name="next" value="{{ next_url }}">
+    <div class="members">
+      {% for m in members %}
+      <label class="member">
+        <input type="radio" name="member_id" value="{{ m.id }}"
+               {% if m.id == selected %}checked{% endif %} required>
+        <span>{{ m.name }}{% if m.role == 'admin' %} · 管理员{% endif %}</span>
+      </label>
+      {% endfor %}
+    </div>
+    <label for="pin">PIN</label>
+    <input id="pin" name="pin" type="password" inputmode="numeric" pattern="\d{6}"
+           maxlength="6" autocomplete="current-password" autofocus required>
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+    <button type="submit">进入</button>
+  </form>
+</main>
+</body>
+</html>

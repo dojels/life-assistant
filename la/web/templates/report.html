@@ -1,0 +1,277 @@
+{% extends "base.html" %}
+{% block title %}使用报表 · 默{% endblock %}
+{% block body %}
+<div class="page wide">
+
+  <div class="page-head">
+    <div class="head-main">
+      <h1>使用报表</h1>
+      <p class="sub">轮次、token、缓存命中、工具与技能调用 —— 全部来自事件日志,纯读。</p>
+    </div>
+    <div class="head-actions">
+      <a class="pill" href="/trace">回到轨迹</a>
+    </div>
+  </div>
+
+  {# ---------------------------------------------------------- 时段选择
+     纯链接 + 普通表单:不引 JS,刷新/分享/后退都正常(与轨迹页/错题页同一套做法)。 #}
+  <div class="segmented tabs" role="tablist">
+    {% for item in view.period_tabs %}
+    <a role="tab" aria-selected="{{ 'true' if item.on else 'false' }}"
+       href="{{ item.href }}" class="{{ 'on' if item.on else '' }}">{{ item.label }}</a>
+    {% endfor %}
+  </div>
+
+  <section class="card">
+    <div class="chip-row">
+      <span class="tag">看的是 {{ view.range_label }}</span>
+      {% if view.period == 'custom' %}<span class="tag">自定义区间</span>{% endif %}
+      <span class="tag">口径:{{ view.price_note }}</span>
+      <span class="tag">生成于 {{ view.generated_at }}</span>
+    </div>
+    <form method="get" action="/report" class="report-custom">
+      <input type="hidden" name="period" value="custom">
+      <label>从 <input type="date" name="start" value="{{ view.custom_start }}"></label>
+      <label>到 <input type="date" name="end" value="{{ view.custom_end }}"></label>
+      <button type="submit">看这一段</button>
+      <span class="muted">留空就是最近 {{ view.default_days }} 天</span>
+    </form>
+  </section>
+
+  {% for note in view.notes %}
+  {# 这些是"这段时间的数据覆盖到哪"的说明,不是报错 —— 用信息条,别用红色警告 #}
+  <p class="info">{{ note }}</p>
+  {% endfor %}
+
+  {# ---------------------------------------------------------------- 总览 #}
+  <div class="metric-grid">
+    {% for item in view.metric_rows %}
+    <div class="metric">
+      <div class="metric-label">{{ item.key }}</div>
+      <div class="metric-value" style="font-size:23px">{{ item.value }}</div>
+      <div class="metric-label" style="margin-top:6px;font-weight:400;letter-spacing:0">{{ item.note }}</div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {# ---------------------------------------------------------------- 分时段 #}
+  <section class="card">
+    <h2>{{ view.period_label }}的账({{ view.report_rows | length }} 格)</h2>
+    <details class="about">
+      <summary>这几个数怎么算的</summary>
+      <div class="about-body">
+        <p><strong>轮次</strong>数的是你说的话(user/message);<strong>调用</strong>是模型被调了几次 ——
+          一轮里它可能被调好几次(工具往返),所以这两个数不相等是正常的。</p>
+        <p><strong>命中率</strong> = 命中 ÷(命中 + 未命中),只统计有 token 账的那些调用。
+          「缓存省下」是拿实测命中率估的:不做缓存要按未命中单价付全部输入。</p>
+        <p><strong>≈花费</strong> = token 钱 + 联网请求费。token 按**每条事件自己的时刻**分档:
+          工作日 9:00-12:00、14:00-18:00(北京时间)是高峰,其余时间与周末**半价** ——
+          ⚠️ 法定节假日没单独扣,那几天按高峰算,所以这个数是**略微高估**的估计值,真实账单以服务端为准。
+          联网(搜/抓)每次**成功**请求 0.005 元,失败与无结果不计费。</p>
+      </div>
+    </details>
+    <div class="report-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>{{ view.period_label }}</th>
+          <th class="num">轮次</th>
+          <th class="num">调用</th>
+          <th class="num">输入 token</th>
+          <th class="num">命中</th>
+          <th class="num">未命中</th>
+          <th class="num">命中率</th>
+          <th class="num">输出 token</th>
+          <th class="num">联网(搜/抓)</th>
+          <th class="num">≈花费</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in view.report_rows %}
+        <tr>
+          <td>{{ row.label }}</td>
+          <td class="num">{{ row.asks }}</td>
+          <td class="num">{{ row.calls }}</td>
+          <td class="num">{{ "{:,}".format(row.prompt_tokens) }}</td>
+          <td class="num">{{ "{:,}".format(row.cache_hit_tokens) }}</td>
+          <td class="num">{{ "{:,}".format(row.cache_miss_tokens) }}</td>
+          <td class="num">{% if row.calls %}{{ "%.1f%%"|format(row.cache_rate * 100) }}{% else %}—{% endif %}</td>
+          <td class="num">{{ "{:,}".format(row.completion_tokens) }}</td>
+          <td class="num">{% if row.web_calls %}{{ row.search_calls }}/{{ row.fetch_calls }}{% else %}—{% endif %}</td>
+          <td class="num">{% if row.cost_total %}{{ "￥%.4f"|format(row.cost_total) }}{% else %}—{% endif %}</td>
+        </tr>
+        {% endfor %}
+        <tr class="total">
+          <td>{{ view.report_totals.label }}</td>
+          <td class="num">{{ view.report_totals.asks }}</td>
+          <td class="num">{{ view.report_totals.calls }}</td>
+          <td class="num">{{ "{:,}".format(view.report_totals.prompt_tokens) }}</td>
+          <td class="num">{{ "{:,}".format(view.report_totals.cache_hit_tokens) }}</td>
+          <td class="num">{{ "{:,}".format(view.report_totals.cache_miss_tokens) }}</td>
+          <td class="num">{% if view.report_totals.calls %}{{ "%.1f%%"|format(view.report_totals.cache_rate * 100) }}{% else %}—{% endif %}</td>
+          <td class="num">{{ "{:,}".format(view.report_totals.completion_tokens) }}</td>
+          <td class="num">{% if view.report_totals.web_calls %}{{ view.report_totals.search_calls }}/{{ view.report_totals.fetch_calls }}{% else %}—{% endif %}</td>
+          <td class="num">{% if view.report_totals.cost_total %}{{ "￥%.4f"|format(view.report_totals.cost_total) }}{% else %}—{% endif %}</td>
+        </tr>
+      </tbody>
+    </table>
+    </div>
+  </section>
+
+  {# ---------------------------------------------------------------- 工具 #}
+  <section class="card">
+    <h2>工具调用({% if view.catalog_size %}注册表 {{ view.catalog_size }} 个,全列{% else %}历史出现过的 {{ view.tools | length }} 个{% endif %}{% if view.tools_retired %};另有 {{ view.tools_retired | length }} 个已下线{% endif %})</h2>
+    <div class="bar">
+      <span class="section-note">排序:</span>
+      {% if view.sort == 'failed' %}<span class="pill tinted">按失败次数</span>{% else %}<a class="pill" href="{{ view.sort_link_failed }}">按失败次数</a>{% endif %}
+      {% if view.sort == 'calls' %}<span class="pill tinted">按调用次数</span>{% else %}<a class="pill" href="{{ view.sort_link_calls }}">按调用次数</a>{% endif %}
+      <span class="muted">优化时先看失败次数:调 3 次失败 3 次的工具,比调 20 次全成功的更该被看见。</span>
+    </div>
+
+    {% if view.internal_catalog %}
+    <p class="muted">
+      <span class="tag">框架自己发起({{ view.internal_catalog | length }} 个,不在上表)</span>
+      {% for name in view.internal_catalog %}<span class="tag"><code>{{ name }}</code></span>{% endfor %}
+    </p>
+    {% endif %}
+
+    <details class="about">
+      <summary>这张表的口径</summary>
+      <div class="about-body">
+        <p>⭐ <strong>全列</strong>:表里是<strong>当前注册表里的每一个工具</strong>(含一次都没调过的)
+          —— 这样"哪些工具在干活、哪些从没动过、哪些老失败"一眼能挑出来。</p>
+        <p><strong>调用/成功率只算模型自己发起</strong>的调用(<code>via=model</code>);
+          成功率 = 成功 ÷ 调用,「没成功」里既有真的报错,也有被门禁挡下、参数不合格这类请求。
+          框架内部调用(query_summary_pool 等)在最下面单独一栏,不计入这里。</p>
+        {% if view.tools_retired %}<p>只在历史事件里出现过的旧名字(工具合并前的)在最下面<strong>单独一栏</strong>,
+          不混进成功率 —— 它们现在已经不存在了。</p>{% endif %}
+      </div>
+    </details>
+
+    {% if view.never_called %}
+    <div class="chip-row">
+      <span class="tag draft">这一段时间从未调用({{ view.never_called | length }} 个)</span>
+      {% for name in view.never_called %}<span class="tag"><code>{{ name }}</code></span>{% endfor %}
+    </div>
+    {% endif %}
+
+    {% if not view.tools %}
+    <p class="muted">这一段时间里没有工具调用。</p>
+    {% else %}
+    <div class="report-scroll">
+    <table>
+      <thead><tr><th>工具</th><th class="num">调用</th><th class="num">成功</th><th class="num">失败</th><th class="num">成功率</th><th>条形</th></tr></thead>
+      <tbody>
+        {% for item in view.tools %}
+        <tr>
+          <td><code>{{ item.name }}</code></td>
+          <td class="num">{{ item.calls }}</td>
+          <td class="num">{{ item.ok }}</td>
+          <td class="num">{% if item.failed %}<strong>{{ item.failed }}</strong>{% else %}0{% endif %}</td>
+          <td class="num">{% if item.calls %}{{ "%.1f%%"|format(item.rate * 100) }}{% else %}— 未调用{% endif %}</td>
+          <td>{% if item.calls %}<span class="report-bar"><i style="width: {{ "%.1f"|format(item.rate * 100) }}%"></i></span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% endif %}
+  </section>
+
+  {% if view.tools_retired %}
+  <section class="card tinted">
+    <h2>已下线的旧工具名({{ view.tools_retired | length }} 个)</h2>
+    <p class="muted">这些名字只出现在历史事件里,当前的注册表里已经没有,不参与"当前工具成功率"。</p>
+    <div class="report-scroll">
+    <table>
+      <thead><tr><th>旧名</th><th class="num">调用</th><th class="num">成功</th><th class="num">失败</th><th class="num">成功率</th></tr></thead>
+      <tbody>
+        {% for item in view.tools_retired %}
+        <tr>
+          <td><code>{{ item.name }}</code></td>
+          <td class="num">{{ item.calls }}</td>
+          <td class="num">{{ item.ok }}</td>
+          <td class="num">{{ item.failed }}</td>
+          <td class="num">{% if item.calls %}{{ "%.1f%%"|format(item.rate * 100) }}{% else %}—{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </section>
+  {% endif %}
+
+  {# ---------------------------------------------------------------- 技能 #}
+  <section class="card">
+    <h2>技能调用({% if view.skills %}{{ view.skills | length }} 个{% else %}0 个{% endif %})</h2>
+    <details class="about">
+      <summary>技能为什么没有自己的工具名</summary>
+      <div class="about-body">
+        <p>它是<strong>藏在 <code>skill</code> 工具里</strong>的
+          (<code>action=list</code> 看目录、<code>action=load</code> 读正文)。
+          所以这一张表按<strong>技能名</strong>汇总(没给名字的那几次算「(没给名字)」)。</p>
+      </div>
+    </details>
+    {% if not view.skills %}
+    <p class="muted">这一段时间里没有加载过任何技能。</p>
+    {% else %}
+    <div class="report-scroll">
+    <table>
+      <thead><tr><th>技能</th><th class="num">调用</th><th class="num">成功</th><th class="num">失败</th><th class="num">成功率</th></tr></thead>
+      <tbody>
+        {% for item in view.skills %}
+        <tr>
+          <td><code>{{ item.name }}</code></td>
+          <td class="num">{{ item.calls }}</td>
+          <td class="num">{{ item.ok }}</td>
+          <td class="num">{{ item.failed }}</td>
+          <td class="num">{{ "%.1f%%"|format(item.rate * 100) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% endif %}
+  </section>
+
+  {# ---------------------------------------------------------------- 内部调用 #}
+  {% if view.internal_tools %}
+  <section class="card tinted">
+    <h2>框架内部调用(单独一栏,不计入上面的成功率)</h2>
+    <p class="muted">
+      系统自己发起的检索/编排调用(长期记忆检索、按时间回查档案、并行挖掘),不是模型选的工具。
+      它们同样花钱,所以单独列。
+    </p>
+    <div class="report-scroll">
+    <table>
+      <thead><tr><th>调用</th><th class="num">次数</th><th class="num">成功</th><th class="num">失败</th></tr></thead>
+      <tbody>
+        {% for item in view.internal_tools %}
+        <tr>
+          <td><code>{{ item.name }}</code></td>
+          <td class="num">{{ item.calls }}</td>
+          <td class="num">{{ item.ok }}</td>
+          <td class="num">{{ item.failed }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </section>
+  {% endif %}
+
+  <details class="about" style="margin-top:20px">
+    <summary>数据从哪来 · 金额准不准</summary>
+    <div class="about-body">
+      <p>数据来源是<strong>事件日志</strong>(<code>memory.db</code> 的 <code>events</code> 表 + 归档的
+        JSONL):token 账来自 <code>llm/usage</code> 事件(D136 起每次模型调用落一条),
+        工具与技能账来自 <code>tool/result</code> 事件。</p>
+      <p><strong>这一页只读</strong> —— 它不会为了显示一个数字去调用模型,也不会写任何一行。</p>
+      {% if not view.usage_available %}<p>⚠️ 库里暂时没有 token 账:token 与命中率会是 0,
+        但轮次、工具、技能这几栏是真的 —— 新聊一轮就会开始有账。</p>{% endif %}
+      <p>金额是<strong>估算</strong>({{ view.price_note }}),真实账单以服务端为准。</p>
+    </div>
+  </details>
+
+</div>
+{% endblock %}

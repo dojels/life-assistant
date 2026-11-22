@@ -1,0 +1,102 @@
+[project]
+name = "life-assistant"
+version = "0.1.0"
+description = "本地优先的家庭助手智能体:长期记忆 + 记账/日程/健康/错题四个能力域"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.12"
+authors = [{ name = "Life Assistant contributors" }]
+keywords = ["personal-assistant", "local-first", "sqlite", "agent", "self-hosted"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Personal Information Manager",
+    "Environment :: Web Environment",
+    "Natural Language :: Chinese (Simplified)",
+]
+dependencies = [
+    "httpx>=0.28",
+    "tzdata>=2025.1",
+    # --- 运行时真在用、但以前漏声明的(2026-10-18 审计补齐)-------------------
+    # Web / 校验 / 模板 / 文件上传
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "pydantic>=2.7",
+    "jinja2>=3.1",
+    "python-multipart>=0.0.9",
+    # 微信媒体解密;日历展开;FSRS 排程
+    "pycryptodome>=3.20",
+    "fsrs>=6.0",
+    "icalendar>=6.0",
+    "recurring-ical-events>=3.0",
+    # --- M12 基础能力层:读常见文档格式 -------------------------------------
+    # ⚠️ 三个都是**延迟导入**(见 la/base/extract.py 的 _guard):没装时功能降级、
+    #    给出 pip 指引,应用照常跑 —— 与 D82 引 pycryptodome 同一条纪律。
+    #    许可证:python-docx MIT / python-pptx MIT / pypdf BSD-3,都可以放心用。
+    "python-docx>=1.2",   # 读 .docx(段落 + 表格)
+    "python-pptx>=1.0",   # 读 .pptx(逐页正文 + 备注)
+    "pypdf>=6.0",         # 读 .pdf(逐页文本;扫描件会如实说"没有文字层")
+    # --- M12 / P1-4:写正式文档(Word / Excel)--------------------------------
+    # openpyxl 只管**写** xlsx;读 xlsx 走标准库(zipfile + ElementTree),零依赖。
+    "openpyxl>=3.1",      # 写 .xlsx(表头冻结、数字可求和)
+    # --- M14:错题卷的图形裁剪 -------------------------------------------------
+    # ⚠️ 这是**必需**依赖(不是可选):错题卷要有图才作数,而图形来自照片裁剪。
+    #    代码里仍然延迟导入 + 明确降级(la/domain/study/figure.py),理由与
+    #    python-docx 那三个一样:没装时功能少一块,而不是整个应用起不来。
+    "pillow>=11",         # bbox 裁剪 + EXIF 方向(手机横拍的照片)
+]
+
+[project.optional-dependencies]
+# 听写音频的 MP3 编码。**没装也能用**:退回 WAV,只是体积大 5 倍(见 study/tts.py)。
+tts = ["lameenc>=1.8"]
+# ⚠️ 2026-10-18 审计已把上面这些运行时依赖补进 dependencies;以后新增第三方
+#    顶层 import 时必须同步加在这里,否则“本地全绿、换机起不来”。
+
+[build-system]
+# >=77 才支持 PEP 639 的 license / license-files 字段
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+# ⚠️ 这份清单是**手写**的,加新子包时别忘了同步 —— 漏了不会报错,
+#    只会在 wheel/sdist 里静默少文件(本地开发用 venv 跑,平时发现不了)。
+packages = [
+    "la",
+    "la.agent",
+    "la.base",
+    "la.bridge",
+    "la.bridge.adapters",
+    "la.domain",
+    "la.domain.calendars",
+    "la.domain.health",
+    "la.domain.importers",
+    "la.domain.routers",
+    "la.domain.schemas",
+    "la.domain.services",
+    "la.domain.study",
+    "la.family",
+    "la.llm",
+    "la.memory",
+    "la.ops",
+    "la.storage",
+    "la.tasks",
+    "la.tools",
+    "la.ui",
+    "la.web",
+]
+
+# ⚠️ 模板/静态文件不在 packages 里,必须单独声明 —— 漏了不会报错,
+#    只会在 wheel/sdist 里静默少文件(与上面那句"清单是手写的"是同一类坑)。
+[tool.setuptools.package-data]
+"la.domain.study" = ["templates/*.j2"]
+"la.web" = ["templates/*.html", "static/*"]
+
+[project.scripts]
+la = "la.__main__:main"
+la-launcher = "la.ops.launcher:main"
+la-weixin-login = "la.bridge.adapters.weixin_login_server:main"

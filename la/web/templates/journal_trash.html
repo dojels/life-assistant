@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}回收站 · 笔记{% endblock %}
+{% block body %}
+<div class="page wide jn-page">
+  <header class="pg-top">
+    <div class="pg-heading">
+      <h1>回收站</h1>
+      <p class="pg-sub">删掉的笔记都在这儿 —— 恢复是免费的,永久删除要先做</p>
+    </div>
+    <div class="pg-tools"><a class="pg-btn ghost" href="/journal">回到笔记</a></div>
+  </header>
+
+  {% if ok %}<p class="pg-note">{{ ok }}</p>{% endif %}
+  {% if err %}<p class="warn">{{ err }}</p>{% endif %}
+
+  <section class="pg-card">
+    {% if items %}
+    <table>
+      <thead><tr><th>编号</th><th>删于</th><th>夹</th><th>标题</th><th>动作</th></tr></thead>
+      <tbody>
+      {% for item in items %}
+        <tr>
+          <td>#{{ item.id }}</td>
+          <td>{{ item.deleted_at[:16] | replace('T', ' ') }}</td>
+          <td>{{ item.folder }}</td>
+          <td>{{ item.title }}</td>
+          <td>
+            <form method="post" action="/journal/notes/{{ item.id }}/restore">
+              <input type="hidden" name="_idem" value="{{ idem() }}">
+              <button class="pg-btn ghost small" type="submit">恢复</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="pg-empty">
+      <span class="pg-empty-title">回收站是空的</span>
+      <span class="pg-empty-sub">删除是软删除:笔记不会被真的抹掉。</span>
+    </div>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

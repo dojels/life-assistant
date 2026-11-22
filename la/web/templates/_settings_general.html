@@ -1,0 +1,86 @@
+  <section class="card" style="padding:18px;margin-bottom:18px">
+    <h2 style="margin-top:0">数据归属</h2>
+    <p class="sub" style="margin-top:0">「全家」= 谁都能看;「各自」= 只有本人能看。默认只有<strong>错题</strong>是全家,记账/日程/健康都是各自。切换<strong>只影响以后新写入的数据</strong>,旧数据保持原样。</p>
+    <div style="display:grid;gap:10px">
+      {% for item in share_modes %}
+      <form method="post" action="/settings/share"
+            style="display:grid;grid-template-columns:1fr 180px auto;gap:10px;align-items:center">
+        <input type="hidden" name="domain" value="{{ item.domain }}">
+        <strong>{{ item.label }}</strong>
+        <select name="mode" style="padding:9px;border-radius:8px;border:1px solid #c7c7cc;background:Canvas;color:inherit">
+          <option value="family" {% if item.mode == "family" %}selected{% endif %}>全家可见</option>
+          <option value="own" {% if item.mode == "own" %}selected{% endif %}>各自可见</option>
+        </select>
+        <button type="submit" style="padding:9px 14px;border:0;border-radius:8px;background:#0a84ff;color:#fff;cursor:pointer">保存</button>
+      </form>
+      {% endfor %}
+      {% for item in fixed_modes %}
+      <div style="display:grid;grid-template-columns:1fr 180px auto;gap:10px;align-items:center;opacity:.75">
+        <strong>{{ item.label }}</strong>
+        <span style="font-size:14px">始终各自</span>
+        <span style="font-size:13px;opacity:.7">不可设</span>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="card" style="padding:18px;margin-bottom:18px">
+    <h2 style="margin-top:0">成员</h2>
+    <p class="sub" style="margin-top:0">成员决定"这笔账记在谁名下";PIN 是他们的登录凭据,忘了只能用恢复码重置。</p>
+    <table style="width:100%;border-collapse:collapse">
+      <thead>
+        <tr style="text-align:left;opacity:.6;font-size:13px">
+          <th style="padding:8px 6px">名字</th>
+          <th style="padding:8px 6px">角色</th>
+          <th style="padding:8px 6px">PIN</th>
+          <th style="padding:8px 6px">状态</th>
+          <th style="padding:8px 6px">操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in members %}
+        <tr style="border-top:1px solid #e5e5ea">
+          <td style="padding:10px 6px">{{ m.name }}</td>
+          <td style="padding:10px 6px">{{ role_labels.get(m.role, m.role) }}</td>
+          <td style="padding:10px 6px">{{ "已设" if m.has_pin else "未设" }}</td>
+          <td style="padding:10px 6px">{{ "在用" if m.active else "已停用" }}</td>
+          <td style="padding:10px 6px">
+            <form method="post" action="/settings/members/{{ m.id }}/pin"
+                  style="display:inline-flex;gap:6px;align-items:center">
+              <input name="pin" type="password" inputmode="numeric" pattern="\d{6}"
+                     maxlength="6" placeholder="新 PIN" required
+                     style="width:96px;padding:7px 9px;border-radius:8px;border:1px solid #c7c7cc;background:Canvas;color:inherit">
+              <button type="submit" style="padding:7px 10px;border:0;border-radius:8px;background:#0a84ff;color:#fff;cursor:pointer">重置</button>
+            </form>
+            {% if m.active %}
+            <form method="post" action="/settings/members/{{ m.id }}/deactivate"
+                  style="display:inline" onsubmit="return confirm('停用 {{ m.name }}?它的登录票据会一起作废。')">
+              <button type="submit" style="padding:7px 10px;border:1px solid #ff3b30;border-radius:8px;background:transparent;color:#ff3b30;cursor:pointer">停用</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="card" style="padding:18px">
+    <h2 style="margin-top:0">添加成员</h2>
+    <p class="sub" style="margin-top:0">孩子账号只用于复习;家长能聊天、管错题;管理员还能管成员与绑定。</p>
+    <form method="post" action="/settings/members/add"
+          style="display:grid;grid-template-columns:1fr 140px 140px auto;gap:10px;align-items:end">
+      <label>名字<input name="name" required maxlength="20"
+             style="width:100%;box-sizing:border-box;padding:9px;border-radius:8px;border:1px solid #c7c7cc;background:Canvas;color:inherit"></label>
+      <label>角色
+        <select name="role" style="width:100%;padding:9px;border-radius:8px;border:1px solid #c7c7cc;background:Canvas;color:inherit">
+          <option value="parent">家长</option>
+          <option value="child">孩子</option>
+          <option value="admin">管理员</option>
+        </select>
+      </label>
+      <label>6 位 PIN<input name="pin" type="password" inputmode="numeric" pattern="\d{6}"
+             maxlength="6" required style="width:100%;box-sizing:border-box;padding:9px;border-radius:8px;border:1px solid #c7c7cc;background:Canvas;color:inherit"></label>
+      <button type="submit" style="padding:10px 16px;border:0;border-radius:8px;background:#0a84ff;color:#fff;cursor:pointer">添加</button>
+    </form>
+  </section>

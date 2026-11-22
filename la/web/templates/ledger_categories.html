@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}分类管理 · 账本{% endblock %}
+{% block body %}
+<div class="page wide ledger">
+
+  <header class="lg-top">
+    <div class="lg-heading">
+      <a class="lg-back" href="/ledger">← 回账本</a>
+      <h1>分类</h1>
+      <p class="lg-sub">{{ kind_label }}分类<span class="lg-dot">·</span>{{ categories|length }} 个</p>
+    </div>
+    <div class="lg-tools">
+      <a class="lg-btn ghost" href="/ledger?view={{ kind }}">去看账本</a>
+    </div>
+  </header>
+
+  <nav class="lg-tabs" aria-label="收支分类切换">
+    <a class="lg-tab{{ ' on' if kind == 'expense' }}" href="/ledger/categories?kind=expense"
+       {{ 'aria-current="page"' if kind == 'expense' }}>支出分类</a>
+    <a class="lg-tab{{ ' on' if kind == 'income' }}" href="/ledger/categories?kind=income"
+       {{ 'aria-current="page"' if kind == 'income' }}>收入分类</a>
+  </nav>
+
+  {% if ok %}<p class="lg-note ok">{{ ok }}</p>{% endif %}
+  {% if err %}<p class="lg-note error">没有做成:{{ err }}</p>{% endif %}
+
+  <section class="lg-card">
+    <div class="lg-card-head">
+      <h2>新建一个{{ kind_label }}分类</h2>
+      <span class="lg-card-note">2~6 个字最好记</span>
+    </div>
+    <form method="post" action="/ledger/categories/add" class="lg-addcat">
+      <input type="hidden" name="_idem" value="{{ idem() }}">
+      <input type="hidden" name="kind" value="{{ kind }}">
+      <input type="text" name="name" placeholder="比如 宠物、健身、房租" maxlength="30" required autocomplete="off">
+      <button class="lg-btn primary">新建</button>
+    </form>
+  </section>
+
+  <section class="lg-card lg-cats">
+    <div class="lg-card-head">
+      <h2>{{ kind_label }}分类</h2>
+      <span class="lg-card-note">点「改名」就地改;「归档」之后新账不再选它</span>
+    </div>
+    {% for c in categories %}
+    <div class="lg-cat{{ ' archived' if c.archived }}">
+      <span class="lg-cat-mark" style="background:var(--tone-{{ loop.index0 % 8 }});color:#fff">{{ c.name[:1] }}</span>
+      <div class="lg-cat-main">
+        <span class="lg-cat-name">{{ c.name }}{% if c.archived %}<span class="lg-tag">已归档</span>{% endif %}</span>
+        <span class="lg-cat-meta">
+          {%- if c.txn_count %}用了 {{ c.txn_count }} 笔<span class="lg-dot">·</span>¥{{ yuan(c.total_cents) }}
+          {%- else %}还没用过{% endif -%}
+        </span>
+      </div>
+      <div class="lg-cat-acts">
+        <details class="lg-edit">
+          <summary class="lg-btn small ghost">改名</summary>
+          <form method="post" action="/ledger/categories/{{ c.id }}/rename" class="lg-edit-form">
+            <input type="hidden" name="_idem" value="{{ idem() }}">
+            <input type="hidden" name="kind" value="{{ kind }}">
+            <input type="text" name="name" value="{{ c.name }}" maxlength="30" required aria-label="新名字">
+            <button class="lg-btn small">保存</button>
+            <span class="lg-hint">改名不动 id:已记的账、学到的规则都还跟着它</span>
+          </form>
+        </details>
+        <form method="post" action="/ledger/categories/{{ c.id }}/archive">
+          <input type="hidden" name="_idem" value="{{ idem() }}">
+          <input type="hidden" name="kind" value="{{ kind }}">
+          <input type="hidden" name="archived" value="{{ 0 if c.archived else 1 }}">
+          <button class="lg-btn small{{ ' ghost' if not c.archived else '' }}">{{ '恢复' if c.archived else '归档' }}</button>
+        </form>
+      </div>
+    </div>
+    {% else %}
+    <div class="lg-empty">
+      <span class="lg-empty-mark">🏷️</span>
+      <span class="lg-empty-title">还没有{{ kind_label }}分类</span>
+      <span class="lg-empty-sub">在上面新建一个,记账时就能选了。</span>
+    </div>
+    {% endfor %}
+  </section>
+
+  <p class="lg-foot">
+    归档而不是删除:已经记过的账还指着这个分类,删掉会让历史统计出现一个洞。
+    归档 = 新账不再选它,历史照旧。
+  </p>
+</div>
+{% endblock %}

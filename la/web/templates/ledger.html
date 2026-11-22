@@ -1,0 +1,438 @@
+{% extends "base.html" %}
+{% block title %}账本 · 默{% endblock %}
+{% block body %}
+{% set here = '/ledger?view=' ~ view ~ '&period=' ~ (period|urlencode) %}
+<div class="page wide ledger" data-view="{{ view }}">
+
+  <header class="lg-top">
+    <div class="lg-heading">
+      <h1>账本</h1>
+      <p class="lg-sub">
+        {{ range_label }}<span class="lg-dot">·</span>{{ stats.txn_count }} 笔
+      </p>
+    </div>
+    <div class="lg-tools">
+      <a class="lg-btn ghost" href="/ledger/categories?kind={{ view }}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M4 6.5h16M4 12h16M4 17.5h10"/></svg>
+        分类
+      </a>
+      <a class="lg-btn primary" id="lg-add" href="{{ here }}&compose=1">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        记一笔
+      </a>
+    </div>
+  </header>
+
+  {# 收入 / 支出各是一页:同一个页面、同一个时间段,只切换"看哪一半" #}
+  <nav class="lg-tabs" aria-label="收支切换">
+    <a class="lg-tab{{ ' on' if view == 'expense' }}" href="/ledger?view=expense&period={{ period|urlencode }}"
+       {{ 'aria-current="page"' if view == 'expense' }}>支出</a>
+    <a class="lg-tab{{ ' on' if view == 'income' }}" href="/ledger?view=income&period={{ period|urlencode }}"
+       {{ 'aria-current="page"' if view == 'income' }}>收入</a>
+  </nav>
+
+  <section class="lg-hero lg-hero-{{ view }}">
+    <div class="lg-hero-main">
+      <span class="lg-hero-label">这段时间的{{ view_label }}</span>
+      <div class="lg-hero-value"><span class="lg-cur">¥</span>{{ yuan(view_sum) }}</div>
+      <div class="lg-hero-meta">
+        {{ stats.txn_count }} 笔<span class="lg-dot">·</span>日均 ¥{{ yuan(view_avg) }}{% if group_count %}<span class="lg-dot">·</span>{{ group_count }} 个分类{% endif %}
+      </div>
+    </div>
+    <div class="lg-hero-side">
+      <div class="lg-mini"><span>收入</span><b class="income">¥{{ yuan(stats.income_cents) }}</b></div>
+      <div class="lg-mini"><span>支出</span><b>¥{{ yuan(stats.expense_cents) }}</b></div>
+      <div class="lg-mini"><span>结余</span>
+        <b class="{{ 'income' if stats.net_cents >= 0 else 'expense' }}">{{ '+' if stats.net_cents >= 0 else '−' }}¥{{ yuan(stats.net_cents|abs) }}</b>
+      </div>
+    </div>
+  </section>
+
+  {# 时间区间:预设一键切换,自定义就填两个日期。GET 表单,禁用 JS 也能用 #}
+  <form class="lg-filter" method="get" action="/ledger">
+    <input type="hidden" name="view" value="{{ view }}">
+    <div class="lg-chips">
+      {% for preset in presets %}
+      <a class="lg-chip{{ ' on' if preset.on }}"
+         href="/ledger?view={{ view }}&period={{ (preset.start ~ '..' ~ preset.end)|urlencode }}">{{ preset.label }}</a>
+      {% endfor %}
+    </div>
+    <div class="lg-range">
+      <input type="date" name="start" value="{{ start_date }}" aria-label="从">
+      <span class="lg-range-arrow" aria-hidden="true">→</span>
+      <input type="date" name="end" value="{{ end_date }}" aria-label="到">
+      <button type="submit" class="lg-btn small">查看</button>
+    </div>
+  </form>
+
+  {% if error %}
+  <p class="lg-note error">没有做成:{{ error }}</p>
+  {% endif %}
+
+  {% if undoable %}
+  <form method="post" action="/ledger/undo" class="lg-undo">
+    <input type="hidden" name="_idem" value="{{ idem() }}">
+    <input type="hidden" name="next" value="{{ here }}">
+    <span>刚才删掉了「{{ undoable }}」</span>
+    <button class="lg-btn small ghost">撤销删除</button>
+  </form>
+  {% endif %}
+
+  {# ⭐ 统一反馈机制:它在等你拍板。禁用 JS 也能回答(普通表单 POST)。 #}
+  {% if pending_questions %}
+  <section class="lg-card lg-asks">
+    <div class="lg-card-head">
+      <h2>等你拍板</h2>
+      <span class="lg-card-note">{{ pending_questions|length }} 个问题</span>
+    </div>
+    {% for question, answer in pending_questions %}
+    {% set q = question.as_dict() %}
+    <div class="lg-ask">
+      <div class="lg-ask-head"><span class="lg-ask-mark">?</span><span>{{ q.prompt }}</span></div>
+      {% if q.context %}
+      <div class="lg-ask-context">
+        {%- for key, value in q.context.items() -%}
+          {%- if value and key not in ('known_categories', 'alternatives') -%}
+            <span class="lg-chip static">{{ key }} · {{ value if value is string else value | join(' / ') }}</span>
+          {%- endif -%}
+        {%- endfor -%}
+      </div>
+      {% endif %}
+      <form method="post" action="/questions/answer" class="lg-ask-form">
+        <input type="hidden" name="question_id" value="{{ q.id }}">
+        <input type="hidden" name="next" value="{{ here }}">
+        {% for option in q.options %}
+        <button class="lg-btn small{{ '' if loop.first else ' ghost' }}"
+                name="choice" value="{{ option.value }}"
+                title="{{ option.description }}">{{ option.label }}</button>
+        {% endfor %}
+        {% if q.allow_text %}
+        <input type="text" name="text" placeholder="或者自己写一句…" autocomplete="off">
+        <button class="lg-btn small ghost">就这样</button>
+        {% endif %}
+      </form>
+    </div>
+    {% endfor %}
+  </section>
+  {% endif %}
+
+  {# 上半屏两张卡等高:左边"钱花在哪",右边"哪几类最贵"。
+     右边的排行是**固定高度窗口**(D165):分类少时不至于在页面中间留一大块空,
+     分类多时列表自己在窗口里滚,不会把整页越拉越长。 #}
+  <div class="lg-grid">
+    <section class="lg-card lg-chart">
+      <div class="lg-card-head">
+        <h2>{{ view_label }}构成</h2>
+        <span class="lg-card-note">按分类</span>
+      </div>
+      {% if groups %}
+      <div class="lg-chart-body">
+        <div class="lg-donut" style="background: conic-gradient({{ donut }})"
+             role="img" aria-label="{{ view_label }}按分类的占比图">
+          <div class="lg-donut-hole">
+            <span>合计</span>
+            <strong>¥{{ yuan(view_sum) }}</strong>
+          </div>
+        </div>
+        <ul class="lg-legend">
+          {% for g in groups %}
+          <li class="lg-legend-row">
+            <span class="lg-dot tone-{{ g.tone }}"></span>
+            <span class="lg-legend-name">{{ g.key }}</span>
+            <span class="lg-legend-share">{{ g.share }}%</span>
+            <span class="lg-legend-amount">¥{{ yuan(g.cents) }}</span>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% else %}
+      <div class="lg-empty">
+        <span class="lg-empty-mark">{{ '🧾' if view == 'expense' else '💰' }}</span>
+        <span class="lg-empty-title">这段时间没有{{ view_label }}</span>
+        <span class="lg-empty-sub">换个时间段,或者点右上角「记一笔」。</span>
+      </div>
+      {% endif %}
+    </section>
+
+    <section class="lg-card lg-rank-card">
+      <div class="lg-card-head">
+        <h2>分类排行</h2>
+        <span class="lg-card-note">按金额</span>
+      </div>
+      {% if groups %}
+      <div class="lg-ranks">
+        {% for g in groups %}
+        <div class="lg-rank">
+          <div class="lg-rank-top">
+            <span class="lg-rank-name"><span class="lg-dot tone-{{ g.tone }}"></span>{{ g.key }}</span>
+            <span class="lg-rank-amount">¥{{ yuan(g.cents) }}</span>
+          </div>
+          <div class="lg-meter"><span class="tone-{{ g.tone }}" style="width:{{ (g.cents / peak_group * 100)|round(1) }}%"></span></div>
+          <div class="lg-rank-meta">{{ g.txn_count }} 笔 · {{ g.share }}%</div>
+        </div>
+        {% endfor %}
+      </div>
+      <p class="lg-rank-foot">
+        共 {{ group_count }} 个分类{% if group_count > rank_window %} · 窗口里可以滚{% endif %}
+      </p>
+      {% else %}
+      <div class="lg-empty small"><span class="lg-empty-title">还没有分类数据</span></div>
+      {% endif %}
+    </section>
+  </div>
+
+  {# 只有一个月有账时不画：六根柱子里五根是空气，看不出任何趋势。
+     攒到两个月再出现，页面也干净。 #}
+  {% if trend_active >= 2 %}
+  <section class="lg-card lg-trend">
+    <div class="lg-card-head">
+      <h2>近半年</h2>
+      <span class="lg-card-note">橙 = 支出 · 绿 = 收入</span>
+    </div>
+    <div class="lg-bars" role="img" aria-label="近六个月收支柱状图">
+      {% for month in trend %}
+      <div class="lg-bar-col{{ ' on' if month.period == period[:7] }}"
+           title="{{ month.period }} 支出 ¥{{ yuan(month.expense_cents) }} · 收入 ¥{{ yuan(month.income_cents) }}">
+        {% set month_amount = month.expense_cents if view == 'expense' else month.income_cents %}
+        <span class="lg-bar-amount">{{ yuan(month_amount) if month_amount else '' }}</span>
+        <div class="lg-bar-stack">
+          {% if month.expense_cents %}
+          <span class="lg-bar-seg expense" style="height:{{ (month.expense_cents / trend_peak * 100)|round(1) }}%"></span>
+          {% endif %}
+          {% if month.income_cents %}
+          <span class="lg-bar-seg income" style="height:{{ (month.income_cents / trend_peak * 100)|round(1) }}%"></span>
+          {% endif %}
+        </div>
+        <span class="lg-bar-label">{{ month.period[5:7] }}月</span>
+      </div>
+      {% endfor %}
+    </div>
+    <p class="lg-card-foot">峰值 ¥{{ yuan(trend_peak) }}<span class="lg-dot">·</span>柱上是{{ view_label }},点一列看这个月的全部数字</p>
+  </section>
+  {% endif %}
+
+  {% if drafts %}
+  <section class="lg-card lg-drafts">
+    <div class="lg-card-head">
+      <h2>待确认</h2>
+      <span class="lg-card-note">{{ drafts|length }} 笔 · 约 ¥{{ yuan(draft_total) }}</span>
+    </div>
+    {% for d in drafts %}
+    <div class="lg-draft">
+      <div class="lg-draft-main">
+        <span class="lg-draft-title">{{ d.payee or "(无对方)" }}</span>
+        <span class="lg-draft-sub">{{ d.ts[:16] | replace('T', ' ') }} · #{{ d.id }}</span>
+      </div>
+      <span class="lg-draft-amount {{ 'income' if d.direction == 'income' else '' }}">
+        {{ '+' if d.direction == 'income' else '-' }}¥{{ yuan(d.cents) }}</span>
+      <div class="lg-draft-acts">
+        <form method="post" action="/ledger/confirm/{{ d.id }}">
+          <input type="hidden" name="_idem" value="{{ idem() }}">
+          <input type="hidden" name="next" value="{{ here }}">
+          <button class="lg-btn small">确认入账</button>
+        </form>
+        <form method="post" action="/ledger/void/{{ d.id }}">
+          <input type="hidden" name="_idem" value="{{ idem() }}">
+          <input type="hidden" name="next" value="{{ here }}">
+          <button class="lg-btn small ghost">作废</button>
+        </form>
+        <form method="post" action="/ledger/delete/{{ d.id }}">
+          <input type="hidden" name="_idem" value="{{ idem() }}">
+          <input type="hidden" name="next" value="{{ here }}">
+          <button class="lg-btn small lg-danger">删</button>
+        </form>
+      </div>
+    </div>
+    {% endfor %}
+    <p class="lg-card-foot">删除是软删除,删完页面顶部会出现「撤销删除」。</p>
+  </section>
+  {% endif %}
+
+  <section class="lg-list">
+    <div class="lg-card-head">
+      <h2>{{ view_label }}明细</h2>
+      <span class="lg-card-note">{{ rows|length }} 笔 · 按天分组</span>
+    </div>
+    {% if groups_by_day %}
+    {% for group in groups_by_day %}
+    <div class="lg-day">
+      <div class="lg-day-head">
+        <span class="lg-day-label">{{ group.label }}</span>
+        <span class="lg-day-total">¥{{ yuan(group.total) }}</span>
+      </div>
+      <div class="lg-rows">
+        {% for r in group['items'] %}
+        {% set tone = tones.get(r.category or '(未分类)', 7) %}
+        <article class="lg-row">
+          <span class="lg-row-icon tone-{{ tone }}">{{ (r.category or '·')[:1] }}</span>
+          <div class="lg-row-main">
+            <span class="lg-row-title">{{ r.payee or r.narration or "(无对方)" }}</span>
+            <span class="lg-row-sub">
+              <span>{{ r.category or "未分类" }}</span>
+              <span class="lg-dot">·</span><span>{{ r.account or "-" }}</span>
+              <span class="lg-dot">·</span><span>{{ r.ts[11:16] }}</span>
+              {%- if r.status != 'confirmed' %} <span class="lg-tag {{ r.status }}">{{ status_label(r.status) }}</span>{% endif %}
+            </span>
+          </div>
+          <span class="lg-row-amount {{ 'income' if r.direction == 'income' else '' }}">
+            {{ '+' if r.direction == 'income' else '−' }}¥{{ yuan(r.cents) }}</span>
+          <div class="lg-row-acts">
+            <details class="lg-edit">
+              <summary class="lg-icon-btn" title="改分类" aria-label="改分类">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M4 20h4L20 8l-4-4L4 16Z"/></svg>
+              </summary>
+              <form method="post" action="/ledger/recategorize/{{ r.id }}" class="lg-edit-form">
+                <input type="hidden" name="_idem" value="{{ idem() }}">
+                <input type="hidden" name="next" value="{{ here }}">
+                <select name="category" aria-label="分类">
+                  <option value="">(不改分类)</option>
+                  {% for name in (income_categories if r.direction == 'income' else expense_categories) %}
+                  <option value="{{ name }}" {{ 'selected' if name == r.category }}>{{ name }}</option>
+                  {% endfor %}
+                </select>
+                <input type="text" name="payee" value="{{ r.payee or '' }}" placeholder="对方" aria-label="对方">
+                <button class="lg-btn small">保存</button>
+                <span class="lg-hint">改完会自动记住这个商户</span>
+              </form>
+            </details>
+            <form method="post" action="/ledger/delete/{{ r.id }}">
+              <input type="hidden" name="_idem" value="{{ idem() }}">
+              <input type="hidden" name="next" value="{{ here }}">
+              <button class="lg-icon-btn lg-danger" title="软删除,可在顶部撤销" aria-label="删除">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M5 7h14M9 7V5h6v2M7 7l1 13h8l1-13"/></svg>
+              </button>
+            </form>
+          </div>
+        </article>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="lg-card">
+      <div class="lg-empty">
+        <span class="lg-empty-mark">📒</span>
+        <span class="lg-empty-title">这段时间没有记录</span>
+        <span class="lg-empty-sub">点右上角「记一笔」,或者回聊天页跟助手说一句。</span>
+      </div>
+    </div>
+    {% endif %}
+  </section>
+
+  <p class="lg-foot">
+    想换个地方存?账本可以整本导出成 Beancount 文本:<code>python -m la --export-beancount</code>
+  </p>
+</div>
+
+{# 记一笔:原生 dialog。没有 JS 时 compose=1 会把它渲染成展开状态,
+   关掉就是回到同一个链接 —— 功能不依赖脚本。 #}
+<dialog class="lg-dialog" id="lg-compose" data-open="{{ '1' if compose else '' }}">
+  <form method="post" action="/ledger/add" class="lg-form">
+    <input type="hidden" name="_idem" value="{{ idem() }}">
+    <input type="hidden" name="next" value="{{ here }}">
+    <header class="lg-dialog-head">
+      <h2>记一笔</h2>
+      <a class="lg-dialog-close" href="{{ here }}" aria-label="关闭">×</a>
+    </header>
+
+    <div class="lg-seg" id="lg-dir">
+      <label><input type="radio" name="direction" value="expense" {{ 'checked' if view == 'expense' }}><span>支出</span></label>
+      <label><input type="radio" name="direction" value="income" {{ 'checked' if view == 'income' }}><span>收入</span></label>
+    </div>
+
+    <label class="lg-amount">
+      <span>¥</span>
+      <input name="amount" inputmode="decimal" placeholder="0.00" required autocomplete="off">
+    </label>
+
+    <div class="lg-form-grid">
+      <label class="lg-field">
+        <span>分类</span>
+        <select name="category" id="lg-category">
+          <option value="">自动判断</option>
+          <optgroup label="支出分类" data-kind="expense">
+            {% for name in expense_categories %}<option value="{{ name }}" data-kind="expense">{{ name }}</option>{% endfor %}
+          </optgroup>
+          <optgroup label="收入分类" data-kind="income">
+            {% for name in income_categories %}<option value="{{ name }}" data-kind="income">{{ name }}</option>{% endfor %}
+          </optgroup>
+        </select>
+      </label>
+      <label class="lg-field">
+        <span>账户</span>
+        <select name="account">
+          {% for name in accounts %}<option value="{{ name }}">{{ name }}</option>{% endfor %}
+        </select>
+      </label>
+      <label class="lg-field">
+        <span>对方</span>
+        <input type="text" name="payee" placeholder="老张牛肉面" autocomplete="off">
+      </label>
+      <label class="lg-field">
+        <span>备注</span>
+        <input type="text" name="narration" placeholder="和同事聚餐" autocomplete="off">
+      </label>
+      <label class="lg-field wide">
+        <span>时间</span>
+        <input type="datetime-local" name="ts">
+      </label>
+    </div>
+
+    <footer class="lg-dialog-foot">
+      <span class="lg-hint">时间留空就是现在;金额填正数,方向由上面的「支出 / 收入」决定。</span>
+      <button class="lg-btn primary wide">记下来</button>
+    </footer>
+  </form>
+</dialog>
+
+<script>
+(function () {
+  var dlg = document.getElementById('lg-compose');
+  var trigger = document.getElementById('lg-add');
+  if (!dlg || typeof dlg.showModal !== 'function') return;  // 老浏览器:链接直达 compose=1
+  if (dlg.hasAttribute('open')) dlg.close();                // 服务端为无 JS 渲染的展开态
+  function openDialog() {
+    if (!dlg.open) dlg.showModal();
+    var amount = dlg.querySelector('input[name="amount"]');
+    if (amount) amount.focus();
+  }
+  if (trigger) {
+    trigger.addEventListener('click', function (event) {
+      event.preventDefault();
+      openDialog();
+    });
+  }
+  if (dlg.getAttribute('data-open')) openDialog();
+  // 点遮罩关闭:原生 dialog 点外面不会自己关
+  dlg.addEventListener('click', function (event) {
+    if (event.target === dlg) dlg.close();
+  });
+
+  // 选了「收入」就把支出分类藏起来,反之亦然(后端仍会拒绝方向不符的分类)
+  var dir = document.getElementById('lg-dir');
+  var select = document.getElementById('lg-category');
+  if (!dir || !select) return;
+  function sync() {
+    var picked = dir.querySelector('input[name="direction"]:checked');
+    var want = picked ? picked.value : 'expense';
+    Array.prototype.forEach.call(select.querySelectorAll('option[data-kind]'), function (option) {
+      var match = option.getAttribute('data-kind') === want;
+      option.hidden = !match;
+      option.disabled = !match;
+      if (!match && option.selected) select.value = '';
+    });
+    Array.prototype.forEach.call(select.querySelectorAll('optgroup'), function (group) {
+      group.hidden = group.getAttribute('data-kind') !== want;
+    });
+    Array.prototype.forEach.call(dir.querySelectorAll('label'), function (label) {
+      var input = label.querySelector('input');
+      label.classList.toggle('on', !!(input && input.checked));
+    });
+  }
+  Array.prototype.forEach.call(dir.querySelectorAll('input'), function (input) {
+    input.addEventListener('change', sync);
+  });
+  sync();
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+{% block title %}确认识别结果 · 错题{% endblock %}
+{% block body %}
+<div class="page">
+
+  <div class="page-head">
+    <div class="head-main">
+      <h1>确认识别结果</h1>
+      <p class="sub">识别只是<strong>建议</strong> —— 改完点「确认录入」才会变成错题并开始排复习。</p>
+    </div>
+    <div class="head-actions">
+      <span class="tag">会话 #{{ session.id }}</span>
+      <span class="tag">共 {{ session.candidates|length }} 条</span>
+      <span class="tag confirmed">已入库 {{ session.accepted|length }}</span>
+      <span class="tag draft">待处理 {{ session.pending|length }}</span>
+      <a class="pill" href="/study">回错题页</a>
+    </div>
+  </div>
+
+  {% if ok %}<div class="ok" style="margin-bottom:14px">{{ ok }}</div>{% endif %}
+  {% if err %}<div class="warn" style="margin-bottom:14px">{{ err }}</div>{% endif %}
+
+  {% set unread = session.candidates | rejectattr("recognized") | selectattr("settled", "equalto", false) | list %}
+  {% if unread %}
+  <section class="card tinted">
+    <h2>还没有识别</h2>
+    <p class="muted">
+      有 {{ unread|length }} 张照片还没识别过。点下面的按钮跑一次(通常十几秒);
+      也可以直接手工填 —— 表格就在每张照片下面。
+    </p>
+    <form method="post" action="/study/intake/{{ session.id }}/recognize" id="recognize-form">
+      <input type="hidden" name="solve" value="{{ '1' if settings.solve_on_recognize else '' }}">
+      <button type="submit">{{ '开始识别' if vision_ready else '尝试识别(当前可能不可用)' }}</button>
+    </form>
+    {# 有 JS 就自动跑一次:这是一次纯粹的"省一次点击",禁用它流程照旧(点按钮即可)。 #}
+    <script>
+      (function () {
+        var form = document.getElementById("recognize-form");
+        if (form && !location.search) { form.submit(); }
+      })();
+    </script>
+  </section>
+  {% endif %}
+
+  {% for c in session.candidates %}
+  <section class="card candidate {{ 'done' if c.settled else '' }}">
+    <div class="bar">
+      <span class="tag {{ 'confirmed' if c.settled else 'draft' }}">
+        {% if c.decision == 'accepted' %}已录入 #{{ c.problem_id }}
+        {% elif c.decision == 'edited' %}已改后录入 #{{ c.problem_id }}
+        {% elif c.decision == 'rejected' %}已丢弃
+        {% else %}待确认{% endif %}
+      </span>
+      {% if c.recognized %}
+      <span class="muted">
+        把握 {{ (c.confidence * 100) | round | int }}%
+        {%- if c.model %} · {{ c.model }}{% endif %}
+      </span>
+      {% endif %}
+      {% if c.error %}<span class="tag void">{{ c.error[:40] }}</span>{% endif %}
+    </div>
+
+    <div class="candidate-body">
+      <div class="candidate-shot">
+        {% if c.asset_id %}
+        <a href="/assets/{{ c.asset_id }}" target="_blank" rel="noopener">
+          <img class="shot" src="/assets/{{ c.asset_id }}" alt="题目照片" loading="lazy">
+        </a>
+        <div class="muted" style="margin-top:6px">{{ c.original_name or ('资产 #' ~ c.asset_id) }}</div>
+        {% endif %}
+      </div>
+
+      <div class="candidate-form">
+        {% if c.settled %}
+        <div class="kv">
+          <div><span class="muted">学科</span> {{ c.payload.subject or '-' }}</div>
+          <div><span class="muted">题干</span> {{ (c.payload.stem_text or '(无)')[:120] }}</div>
+          {% if c.payload.knowledge_points %}
+          <div><span class="muted">知识点</span> {{ c.payload.knowledge_points|join('、') }}</div>
+          {% endif %}
+        </div>
+        {% else %}
+        <form method="post" action="/study/intake/candidate/{{ c.id }}/accept" class="stack">
+          <input type="hidden" name="_idem" value="{{ idem() }}">
+          <div class="field">
+            <label for="c-subject-{{ c.id }}">学科</label>
+            <div class="field-body">
+              <select id="c-subject-{{ c.id }}" name="subject" required>
+                {% for name in subjects %}
+                <option value="{{ name }}" {{ 'selected' if c.payload.subject == name else '' }}>{{ name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="field">
+            <label for="c-stem-{{ c.id }}">题干</label>
+            <div class="field-body">
+              <textarea id="c-stem-{{ c.id }}" name="stem" rows="3"
+                        placeholder="照片里抄下来的题干">{{ c.payload.stem_text or '' }}</textarea>
+            </div>
+          </div>
+          <div class="field">
+            <label for="c-answer-{{ c.id }}">答案</label>
+            <div class="field-body">
+              <input id="c-answer-{{ c.id }}" type="text" name="answer"
+                     value="{{ c.payload.answer_text or '' }}" placeholder="照片上有答案就抄下来">
+            </div>
+          </div>
+          <div class="field">
+            <label for="c-kp-{{ c.id }}">知识点</label>
+            <div class="field-body">
+              <input id="c-kp-{{ c.id }}" type="text" name="kp"
+                     value="{{ (c.payload.knowledge_points or [])|join(', ') }}"
+                     placeholder="异分母分数加减, 通分">
+            </div>
+          </div>
+          <div class="field">
+            <label for="c-exp-{{ c.id }}">解析</label>
+            <div class="field-body">
+              <input id="c-exp-{{ c.id }}" type="text" name="explanation"
+                     value="{{ c.payload.explanation or '' }}" placeholder="错因 / 订正(只有家长端看得到)">
+            </div>
+          </div>
+          <div class="field">
+            <label for="c-grade-{{ c.id }}">年级</label>
+            <div class="field-body">
+              <input id="c-grade-{{ c.id }}" type="text" name="grade"
+                     value="{{ c.payload.grade or '' }}" placeholder="五年级">
+            </div>
+          </div>
+          {% if students|length > 1 %}
+          <div class="field">
+            <label for="c-student-{{ c.id }}">谁的</label>
+            <div class="field-body">
+              <select id="c-student-{{ c.id }}" name="student_id">
+                {% for s in students %}
+                <option value="{{ s.id }}" {{ 'selected' if s.id == session.student_id else '' }}>{{ s.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          {% endif %}
+          <div class="field-help">
+            每个知识点会各生成一个<strong>独立调度</strong>的复习单元;首次复习排在明天
+            (不是今天,免得一次被 20 道题轰炸)。
+          </div>
+          <div class="rating-row">
+            <button type="submit">确认录入</button>
+            <button type="submit" class="neutral" formaction="/study/intake/candidate/{{ c.id }}/reject"
+                    formnovalidate>丢弃</button>
+          </div>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if c.raw_text %}
+    <details class="push-text">
+      <summary>看模型的原话(排错用)</summary>
+      <pre class="raw">{{ c.raw_text }}</pre>
+    </details>
+    {% endif %}
+  </section>
+  {% endfor %}
+
+  <p class="page-foot">
+    全部处理完就可以回 <a href="/study">错题页</a> 看今天的复习清单。
+    候选区会一直留着,照片不会因为关掉页面而丢。
+  </p>
+
+</div>
+{% endblock %}

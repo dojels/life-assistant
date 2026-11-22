@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+<defs>
+  <linearGradient id="mbg" x1="10" y1="0" x2="118" y2="128" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#2B5A4C"/><stop offset="1" stop-color="#0E241D"/></linearGradient>
+  <linearGradient id="mskin" x1="40" y1="18" x2="92" y2="112" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#FFFDF5"/><stop offset=".7" stop-color="#F7EAD5"/><stop offset="1" stop-color="#DDC3A2"/></linearGradient>
+  <linearGradient id="mhood" x1="32" y1="30" x2="96" y2="104" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#356053"/><stop offset="1" stop-color="#122A23"/></linearGradient>
+</defs>
+<rect width="128" height="128" rx="30" fill="url(#mbg)"/>
+<circle cx="64" cy="62" r="48" fill="none" stroke="#F2C79A" stroke-opacity=".18" stroke-width="1.2"/>
+<path d="M64 14 C68 36 82 48 92 64 C100 77 95 91 80 98 C73 101 69 103 64 103 C59 103 55 101 48 98 C33 91 28 77 36 64 C46 48 60 36 64 14 Z" fill="url(#mskin)" stroke="#1B382E" stroke-opacity=".35" stroke-width="1.2"/>
+<path d="M64 30 C84 30 97 46 97 66 C97 84 84 99 64 104 C44 99 31 84 31 66 C31 46 44 30 64 30 Z" fill="url(#mhood)" stroke="#0E241D" stroke-width="1.4"/>
+<path d="M64 40 C78 40 88 53 88 68 C88 83 78 94 64 98 C50 94 40 83 40 68 C40 53 50 40 64 40 Z" fill="url(#mskin)"/>
+<path d="M44 64 C50 58 58 60 62 68" fill="none" stroke="#1A2B24" stroke-width="3" stroke-linecap="round"/>
+<ellipse cx="53" cy="64.5" rx="3.6" ry="3.1" fill="#14251F"/>
+<path d="M84 64 C78 58 70 60 66 68" fill="none" stroke="#1A2B24" stroke-width="3" stroke-linecap="round"/>
+<ellipse cx="75" cy="64.5" rx="3.6" ry="3.1" fill="#14251F"/>
+<path d="M60 80 C63 82 66 82 69 80" fill="none" stroke="#9E6453" stroke-width="1.4" stroke-linecap="round" opacity=".65"/>
+<circle cx="64" cy="94" r="3.2" fill="#D9B36C"/>
+</svg>

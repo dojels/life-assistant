@@ -1,0 +1,885 @@
+/* ============================================================================
+   账本 · 视觉层(D164, 2026-10-24)
+   ----------------------------------------------------------------------------
+   为什么单开一份而不是继续往 app.css 里塞:
+     1. 账本页的版式是**数据页**的版式(大数字、环形图、按天流水),
+        与聊天/设置那套"卡片列表"不是同一种语言;
+     2. app.css 已经 3000+ 行,再往里加会让"改一处、晃一片"的概率变高;
+     3. 日历页(calendar.css)已经是这个做法,保持一致。
+
+   纪律(与前三条设计纪律一致):零依赖、零构建、浅深两套;
+   这一份**只负责好看与动效**,删掉它功能仍然完整(表单都是普通 POST)。
+   ========================================================================== */
+
+/* ---------------------------------------------------------------- 调色板 */
+.ledger {
+  /* 分类配色:按排名分配,第一名永远是最醒目的那个色。
+     ⚠️ 必须定义在 .ledger 上:环图用内联 conic-gradient(var(--tone-N)) 引用它。 */
+  --tone-0: #6e5abf;
+  --tone-1: #30b0c7;
+  --tone-2: #ff9500;
+  --tone-3: #ff2d55;
+  --tone-4: #34c759;
+  --tone-5: #5856d6;
+  --tone-6: #e8a30b;
+  --tone-7: #8e8e93;
+
+  --lg-income: #1f9d55;
+  --lg-expense: #e0532f;
+  --lg-radius: 20px;
+  --lg-pad: 22px;
+  --lg-hair: 1px solid var(--card-line);
+  --lg-soft: 0 1px 2px rgba(15, 20, 40, 0.04), 0 12px 30px rgba(15, 20, 40, 0.06);
+  --lg-num: ui-rounded, "SF Pro Rounded", -apple-system, "PingFang SC", system-ui, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  .ledger {
+    --tone-0: #a394f0;
+    --tone-1: #4fc9e0;
+    --tone-2: #ffa733;
+    --tone-3: #ff5c7a;
+    --tone-4: #42d97a;
+    --tone-5: #7d7bff;
+    --tone-6: #ffd45e;
+    --tone-7: #98989d;
+    --lg-income: #48d17d;
+    --lg-expense: #ff8a63;
+    --lg-soft: 0 1px 2px rgba(0, 0, 0, 0.5), 0 14px 34px rgba(0, 0, 0, 0.55);
+  }
+}
+
+/* 数字统一用等宽数字:换一行时小数位不会跳来跳去 */
+.ledger .lg-hero-value,
+.ledger .lg-mini b,
+.ledger .lg-row-amount,
+.ledger .lg-legend-amount,
+.ledger .lg-rank-amount,
+.ledger .lg-day-total,
+.ledger .lg-donut-hole strong,
+.ledger .lg-cat-meta {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* ---------------------------------------------------------------- 页头 */
+.lg-top {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.lg-heading h1 {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+.lg-sub {
+  margin: 6px 0 0;
+  color: var(--fg-2);
+  font-size: 13.5px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.lg-dot { color: var(--fg-3); margin: 0 2px; }
+.lg-back {
+  display: inline-block;
+  margin-bottom: 8px;
+  color: var(--fg-2);
+  font-size: 13px;
+  text-decoration: none;
+  font-weight: 600;
+}
+.lg-back:hover { color: var(--accent); }
+.lg-tools { display: flex; gap: 10px; align-items: center; }
+
+/* ---------------------------------------------------------------- 按钮 */
+.lg-btn {
+  --lg-btn-bg: var(--bg-elevated);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 16px;
+  border-radius: var(--r-full);
+  border: 1px solid var(--card-line);
+  background: var(--lg-btn-bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.18s ease, background 0.18s ease;
+  white-space: nowrap;
+}
+.lg-btn svg { width: 17px; height: 17px; }
+.lg-btn:hover { transform: translateY(-1px); box-shadow: var(--lg-soft); }
+.lg-btn:active { transform: translateY(0) scale(0.985); }
+.lg-btn.primary {
+  border-color: transparent;
+  background: var(--accent-grad);
+  color: #fff;
+  box-shadow: 0 6px 18px rgba(36, 74, 64, 0.28);
+}
+.lg-btn.ghost { background: transparent; color: var(--fg-2); }
+.lg-btn.ghost:hover { background: var(--bg-fill-2); color: var(--fg); }
+.lg-btn.small { padding: 7px 12px; font-size: 13px; }
+/* ⚠️ 不能叫 .danger:app.css 里有 button.danger(specificity 更高),会把按钮刷成
+   淡红底、吃掉图标颜色 —— 2026-10-24 第一版就是这样,删除按钮变成一块空白。 */
+.lg-btn.lg-danger { color: var(--red); border-color: rgba(255, 59, 48, 0.28); background: transparent; }
+.lg-btn.lg-danger:hover { background: var(--tint-red-bg); }
+.lg-btn.wide { width: 100%; }
+
+/* ---------------------------------------------------------------- 收支切换 */
+.lg-tabs {
+  display: inline-flex;
+  padding: 4px;
+  border-radius: var(--r-full);
+  background: var(--bg-fill-2);
+  margin-bottom: 18px;
+  gap: 2px;
+}
+.lg-tab {
+  padding: 8px 26px;
+  border-radius: var(--r-full);
+  color: var(--fg-2);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+}
+.lg-tab:hover { color: var(--fg); }
+.lg-tab.on {
+  background: var(--bg-elevated);
+  color: var(--fg);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), 0 4px 12px rgba(0, 0, 0, 0.06);
+}
+
+/* ---------------------------------------------------------------- 大数字 */
+.lg-hero {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 26px 26px 24px;
+  border-radius: 24px;
+  border: var(--lg-hair);
+  box-shadow: var(--lg-soft);
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+.lg-hero::after {
+  /* 右上角一团柔光:让大数字"浮"在纸上,而不是贴着一张死板的卡片 */
+  content: "";
+  position: absolute;
+  right: -80px;
+  top: -110px;
+  width: 280px;
+  height: 280px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  opacity: 0.14;
+  filter: blur(10px);
+  pointer-events: none;
+}
+.lg-hero-expense {
+  background: linear-gradient(135deg, rgba(255, 149, 0, 0.12), rgba(255, 45, 85, 0.08) 60%, var(--bg-elevated));
+}
+.lg-hero-income {
+  background: linear-gradient(135deg, rgba(52, 199, 89, 0.14), rgba(48, 176, 199, 0.08) 60%, var(--bg-elevated));
+}
+.lg-hero-label {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--fg-2);
+  text-transform: none;
+  margin-bottom: 8px;
+}
+.lg-hero-value {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  font-family: var(--lg-num);
+  font-size: clamp(30px, 5vw, 40px);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+}
+.lg-hero-value .lg-cur { font-size: 0.5em; font-weight: 600; color: var(--fg-2); }
+.lg-hero-expense .lg-hero-value { color: var(--lg-expense); }
+.lg-hero-income .lg-hero-value { color: var(--lg-income); }
+.lg-hero-meta { margin-top: 10px; color: var(--fg-2); font-size: 13px; }
+
+.lg-hero-side {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  min-width: 300px;
+}
+.lg-mini {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(8px);
+}
+@media (prefers-color-scheme: dark) {
+  .lg-mini { background: rgba(255, 255, 255, 0.06); border-color: rgba(255, 255, 255, 0.08); }
+}
+.lg-mini span { font-size: 12px; color: var(--fg-2); font-weight: 600; }
+.lg-mini b { font-size: 16px; font-weight: 700; letter-spacing: -0.01em; }
+.lg-mini b.income { color: var(--lg-income); }
+.lg-mini b.expense { color: var(--lg-expense); }
+
+/* ---------------------------------------------------------------- 区间 */
+.lg-filter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin: 4px 0 18px;
+}
+.lg-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.lg-chip {
+  padding: 7px 14px;
+  border-radius: var(--r-full);
+  background: var(--bg-fill-2);
+  color: var(--fg-2);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.16s ease, color 0.16s ease;
+}
+.lg-chip:hover { background: var(--bg-fill); color: var(--fg); }
+.lg-chip.on { background: var(--tint-accent-bg); color: var(--accent); }
+.lg-chip.static { cursor: default; font-weight: 500; font-size: 12px; }
+
+.lg-range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 12px;
+  border-radius: var(--r-full);
+  background: var(--bg-elevated);
+  border: var(--lg-hair);
+  box-shadow: var(--lg-soft);
+}
+.lg-range input[type="date"] {
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  padding: 4px 2px;
+  border-radius: var(--r-sm);
+}
+.lg-range input[type="date"]:focus-visible { outline: 2px solid var(--accent-soft); outline-offset: 1px; }
+.lg-range-arrow { color: var(--fg-3); font-size: 12px; }
+
+/* ---------------------------------------------------------------- 提示条 */
+.lg-note {
+  margin: 0 0 16px;
+  padding: 11px 14px;
+  border-radius: 14px;
+  font-size: 13.5px;
+  background: var(--bg-fill-2);
+  border: var(--lg-hair);
+}
+.lg-note.error { background: var(--tint-red-bg); border-color: rgba(255, 59, 48, 0.22); color: var(--red); }
+.lg-note.ok { background: var(--tint-green-bg); border-color: rgba(52, 199, 89, 0.24); color: var(--lg-income); }
+.lg-undo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: var(--tint-orange-bg);
+  font-size: 13.5px;
+  color: var(--fg-2);
+}
+
+/* ---------------------------------------------------------------- 卡片 */
+.lg-card {
+  background: var(--bg-elevated);
+  border: var(--lg-hair);
+  border-radius: var(--lg-radius);
+  box-shadow: var(--lg-soft);
+  padding: var(--lg-pad);
+  min-width: 0;
+}
+.lg-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.lg-card-head h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.lg-card-note { font-size: 12.5px; color: var(--fg-2); }
+.lg-card-foot { margin: 14px 0 0; font-size: 12px; color: var(--fg-3); }
+
+.lg-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: 16px;
+  margin-bottom: 16px;
+  /* 两张卡**等高**:左边决出高度,右边跟着长满,页面中段不再留一块灰 */
+  align-items: stretch;
+}
+
+/* ---------------------------------------------------------------- 环形图 */
+.lg-chart {
+  display: flex;
+  flex-direction: column;
+}
+.lg-chart-body {
+  display: flex;
+  align-items: center;
+  gap: 26px;
+  flex-wrap: wrap;
+  /* 卡片被右边拉高时,图例整体垂直居中 —— 空白摊在上下,而不是全堆在底下 */
+  flex: 1 1 auto;
+  align-content: center;
+}
+.lg-donut {
+  position: relative;
+  width: 172px;
+  height: 172px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.03);
+  animation: lg-fade 0.4s ease both;
+}
+.lg-donut-hole {
+  position: absolute;
+  inset: 21%;
+  border-radius: 50%;
+  background: var(--bg-elevated);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  box-shadow: 0 0 0 1px var(--card-line);
+}
+.lg-donut-hole span { font-size: 11px; color: var(--fg-2); font-weight: 600; }
+.lg-donut-hole strong { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
+
+.lg-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex: 1 1 210px;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.lg-legend-row {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  font-size: 13px;
+}
+.lg-legend-row:hover { background: var(--bg-fill-2); }
+.lg-legend-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lg-legend-share { color: var(--fg-2); font-size: 12px; }
+.lg-legend-amount { font-weight: 600; }
+
+.lg-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+  flex: 0 0 auto;
+}
+.tone-0 { background: var(--tone-0); }
+.tone-1 { background: var(--tone-1); }
+.tone-2 { background: var(--tone-2); }
+.tone-3 { background: var(--tone-3); }
+.tone-4 { background: var(--tone-4); }
+.tone-5 { background: var(--tone-5); }
+.tone-6 { background: var(--tone-6); }
+.tone-7 { background: var(--tone-7); }
+
+/* 分类排行 = **固定高度窗口**(D165,用户 2026-10-24:"下面是空的,太影响美观"):
+   卡片跟左边等高、撑满;分类少时底部留一句说明,classified 多时列表自己在窗口里滚,
+   整页高度不再被分类数量牵着走。
+   max-height 是保险丝:分类特别多时,也别让这张卡把整行撑成一米长。 */
+.lg-rank-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.lg-ranks {
+  display: grid;
+  gap: 13px;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 372px;
+  overflow-y: auto;
+  padding-right: 4px;
+  padding-bottom: 6px;
+  /* 底部淡出:滚动时看起来像"还有",而不是被一刀切断 */
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 12px), transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 12px), transparent 100%);
+}
+.lg-ranks::-webkit-scrollbar { width: 6px; }
+.lg-ranks::-webkit-scrollbar-thumb {
+  background: var(--bg-fill);
+  border-radius: var(--r-full);
+}
+.lg-rank-foot {
+  margin: auto 0 0;
+  padding-top: 12px;
+  font-size: 11.5px;
+  color: var(--fg-3);
+}
+.lg-rank-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; font-size: 13px; }
+.lg-rank-name { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; }
+.lg-rank-amount { font-weight: 600; }
+.lg-rank-meta { margin-top: 5px; font-size: 11.5px; color: var(--fg-3); }
+.lg-meter {
+  margin-top: 7px;
+  height: 8px;
+  border-radius: var(--r-full);
+  background: var(--bg-fill-2);
+  overflow: hidden;
+}
+.lg-meter > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  animation: lg-grow 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  transform-origin: left center;
+}
+
+/* ---------------------------------------------------------------- 柱状 */
+.lg-bars {
+  display: flex;
+  align-items: stretch;
+  gap: 14px;
+  height: 200px;
+  padding: 8px 2px 0;
+}
+.lg-bar-col {
+  flex: 1 1 0;
+  /* 三行:金额 / 柱 / 月份。用 grid 而不是 flex —— 金额才会齐着一条线 */
+  display: grid;
+  grid-template-rows: 16px minmax(0, 1fr) 16px;
+  justify-items: center;
+  align-items: end;
+  gap: 6px;
+  height: 100%;
+  border-radius: 12px;
+  padding: 6px 2px;
+  transition: background 0.16s ease;
+}
+.lg-bar-amount {
+  font-size: 11px;
+  color: var(--fg-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.lg-bar-col.on .lg-bar-amount { color: var(--accent); font-weight: 600; }
+.lg-bar-col:hover { background: var(--bg-fill-2); }
+.lg-bar-col.on { background: var(--tint-accent-bg); }
+.lg-bar-stack {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  /* ⚠️ height 必须给死:柱高是百分比,父级 auto 时百分比会全部塌成 0
+     (2026-10-24 第一版就是这样,六根柱子在页面上变成六个小点)。 */
+  height: 100%;
+  min-height: 0;
+}
+.lg-bar-seg {
+  width: 14px;
+  min-height: 3px;
+  border-radius: 5px 5px 2px 2px;
+  animation: lg-grow 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  transform-origin: bottom center;
+}
+.lg-bar-seg.expense { background: var(--tone-2); }
+.lg-bar-seg.income { background: var(--tone-4); }
+.lg-bar-label { font-size: 11.5px; color: var(--fg-2); font-weight: 600; }
+
+/* ---------------------------------------------------------------- 待确认 */
+.lg-trend { margin-bottom: 16px; }
+/* 半年的图现在占满一整行:柱子给粗一点,间距给足,别让 1100px 里飘着六根针 */
+.lg-trend .lg-bars { height: 190px; gap: 22px; }
+.lg-trend .lg-bar-seg { width: 20px; }
+.lg-drafts { margin-bottom: 16px; }
+.lg-draft {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 0;
+  border-top: 1px solid var(--card-line);
+}
+.lg-draft:first-of-type { border-top: 0; padding-top: 2px; }
+.lg-draft-main { flex: 1 1 180px; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.lg-draft-title { font-weight: 600; }
+.lg-draft-sub { font-size: 12px; color: var(--fg-2); }
+.lg-draft-amount { font-weight: 700; font-variant-numeric: tabular-nums; }
+.lg-draft-amount.income { color: var(--lg-income); }
+.lg-draft-acts { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* ---------------------------------------------------------------- 明细 */
+.lg-list { margin-top: 4px; }
+.lg-day { margin-bottom: 14px; }
+.lg-day-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 6px 8px;
+}
+.lg-day-label { font-size: 12.5px; font-weight: 700; color: var(--fg-2); letter-spacing: 0.01em; }
+.lg-day-total { font-size: 12.5px; color: var(--fg-2); }
+.lg-rows {
+  background: var(--bg-elevated);
+  border: var(--lg-hair);
+  border-radius: var(--lg-radius);
+  box-shadow: var(--lg-soft);
+  overflow: hidden;
+}
+.lg-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 18px;
+  border-top: 1px solid var(--card-line);
+  transition: background 0.14s ease;
+}
+.lg-row:first-child { border-top: 0; }
+.lg-row:hover { background: var(--bg-fill-2); }
+.lg-row-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  flex: 0 0 auto;
+}
+.lg-row-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.lg-row-title {
+  font-weight: 600;
+  font-size: 14.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lg-row-sub {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--fg-2);
+}
+.lg-row-amount {
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+.lg-row-amount.income { color: var(--lg-income); }
+.lg-row-acts { display: flex; align-items: center; gap: 2px; opacity: 0.55; transition: opacity 0.16s ease; }
+.lg-row:hover .lg-row-acts, .lg-row:focus-within .lg-row-acts { opacity: 1; }
+
+.lg-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* ⚠️ 必须显式 padding:0 —— app.css 的 button 有 9px 16px 内边距,
+     32px 的按钮内容区会被挤成 0,里面的 svg 直接被压成 0 宽(图标"消失")。 */
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  border: 0;
+  background: transparent;
+  color: var(--fg-2);
+  cursor: pointer;
+  list-style: none;
+}
+.lg-icon-btn::-webkit-details-marker { display: none; }
+.lg-icon-btn svg { width: 17px; height: 17px; }
+.lg-icon-btn:hover { background: var(--bg-fill); color: var(--fg); }
+.lg-icon-btn.lg-danger { color: var(--fg-2); }
+.lg-icon-btn.lg-danger:hover { background: var(--tint-red-bg); color: var(--red); }
+
+.lg-edit { position: relative; }
+.lg-edit-form {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  width: min(440px, 84vw);
+  padding: 12px;
+  border-radius: 14px;
+  background: var(--bg-elevated);
+  border: var(--lg-hair);
+  box-shadow: var(--shadow-float);
+}
+.lg-edit-form select, .lg-edit-form input[type="text"] { min-width: 0; }
+.lg-hint { font-size: 11.5px; color: var(--fg-3); }
+
+.lg-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: var(--r-full);
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--tint-orange-bg);
+  color: var(--orange);
+}
+.lg-tag.draft { background: var(--tint-orange-bg); color: var(--orange); }
+.lg-tag.void { background: var(--tint-gray-bg); color: var(--gray); }
+
+/* ---------------------------------------------------------------- 空态 */
+.lg-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 34px 16px;
+  text-align: center;
+}
+.lg-empty.small { padding: 22px 8px; }
+.lg-empty-mark { font-size: 30px; }
+.lg-empty-title { font-weight: 600; color: var(--fg-2); }
+.lg-empty-sub { font-size: 12.5px; color: var(--fg-3); max-width: 34ch; }
+
+/* ---------------------------------------------------------------- 分类页 */
+.lg-addcat { display: flex; gap: 10px; flex-wrap: wrap; }
+.lg-addcat input[type="text"] { flex: 1 1 220px; }
+.lg-cat {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--card-line);
+}
+.lg-cat:first-of-type { border-top: 0; padding-top: 2px; }
+.lg-cat.archived { opacity: 0.55; }
+.lg-cat-mark {
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--tint-accent-bg);
+  color: var(--accent);
+  font-weight: 700;
+}
+.lg-cat-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.lg-cat-name { font-weight: 600; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.lg-cat-meta { font-size: 12px; color: var(--fg-2); }
+.lg-cat-acts { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.lg-cats .lg-edit-form { right: 0; }
+
+/* ---------------------------------------------------------------- 弹窗 */
+.lg-dialog {
+  border: 0;
+  padding: 0;
+  width: min(560px, calc(100vw - 28px));
+  max-height: min(86vh, 760px);
+  border-radius: 24px;
+  background: var(--bg-elevated);
+  color: var(--fg);
+  box-shadow: var(--shadow-float);
+  overflow: auto;
+  animation: lg-pop 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.lg-dialog::backdrop {
+  background: rgba(10, 12, 24, 0.42);
+  backdrop-filter: blur(6px);
+}
+.lg-form { display: flex; flex-direction: column; }
+.lg-dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 22px 10px;
+}
+.lg-dialog-head h2 { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: -0.01em; }
+.lg-dialog-close {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-fill-2);
+  color: var(--fg-2);
+  text-decoration: none;
+  font-size: 18px;
+  line-height: 1;
+}
+.lg-dialog-close:hover { background: var(--bg-fill); color: var(--fg); }
+
+.lg-seg {
+  display: flex;
+  gap: 4px;
+  margin: 6px 22px 16px;
+  padding: 4px;
+  border-radius: var(--r-full);
+  background: var(--bg-fill-2);
+}
+.lg-seg label { flex: 1 1 0; }
+.lg-seg input { position: absolute; opacity: 0; pointer-events: none; }
+.lg-seg span {
+  display: block;
+  text-align: center;
+  padding: 9px 0;
+  border-radius: var(--r-full);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fg-2);
+  cursor: pointer;
+  transition: background 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
+}
+.lg-seg input:checked + span {
+  background: var(--bg-elevated);
+  color: var(--fg);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+.lg-seg input:focus-visible + span { outline: 2px solid var(--accent-soft); outline-offset: 2px; }
+
+.lg-amount {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 22px 16px;
+  padding: 12px 16px;
+  border-radius: 16px;
+  background: var(--bg-fill-2);
+}
+.lg-amount span { font-size: 22px; font-weight: 600; color: var(--fg-2); }
+.lg-amount input {
+  flex: 1;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  font-family: var(--lg-num);
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  padding: 0;
+  min-width: 0;
+}
+.lg-amount input:focus { outline: none; }
+.lg-amount:focus-within { box-shadow: 0 0 0 2px var(--accent-soft); }
+
+.lg-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 14px;
+  padding: 0 22px 6px;
+}
+.lg-form-grid .wide { grid-column: 1 / -1; }
+.lg-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.lg-field > span { font-size: 12px; font-weight: 600; color: var(--fg-2); }
+.lg-field input, .lg-field select { width: 100%; }
+
+.lg-dialog-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 22px 22px;
+  position: sticky;
+  bottom: 0;
+  background: linear-gradient(to top, var(--bg-elevated) 72%, transparent);
+}
+
+/* ---------------------------------------------------------------- 动效 */
+@keyframes lg-pop {
+  from { opacity: 0; transform: translateY(8px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes lg-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes lg-grow { from { transform: scaleX(0.001); } to { transform: scaleX(1); } }
+.lg-bar-seg { animation-name: lg-rise; }
+@keyframes lg-rise { from { transform: scaleY(0.001); } to { transform: scaleY(1); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .lg-dialog, .lg-donut, .lg-meter > span, .lg-bar-seg { animation: none !important; }
+  .lg-btn { transition: none; }
+}
+
+/* ---------------------------------------------------------------- 窄屏 */
+@media (max-width: 860px) {
+  .lg-grid { grid-template-columns: minmax(0, 1fr); }
+  .lg-hero { flex-direction: column; align-items: stretch; gap: 18px; }
+  .lg-hero-side { min-width: 0; }
+  .lg-chart-body { gap: 18px; }
+  .lg-donut { width: 148px; height: 148px; }
+}
+
+@media (max-width: 560px) {
+  /* ⚠️ 窄屏最容易出的问题不是"不好看",是**整页横向溢出**:
+     环图 148px + 图例最小 180px + 卡片内边距 > 屏宽,右边一列全被切掉。
+     所以窄屏下图表改成上下排,日期框允许收缩。 */
+  .lg-chart-body { flex-direction: column; align-items: stretch; gap: 14px; }
+  .lg-donut { align-self: center; }
+  .lg-legend { min-width: 0; flex: 1 1 auto; }
+  .lg-bars { gap: 2px; }
+  .lg-bar-amount { font-size: 10px; }
+  .lg-range input[type="date"] { flex: 1 1 0; min-width: 0; }
+  .lg-hero-side { gap: 8px; }
+  .lg-mini { padding: 10px 11px; }
+  .lg-mini b { font-size: 14px; }
+  .lg-top { flex-wrap: wrap; align-items: flex-start; }
+  .lg-heading h1 { font-size: 26px; }
+  .lg-tools { width: 100%; }
+  .lg-tools .lg-btn { flex: 1 1 0; }
+  .lg-chips { overflow-x: auto; flex-wrap: nowrap; padding-bottom: 2px; }
+  .lg-chip { flex: 0 0 auto; }
+  .lg-range { width: 100%; justify-content: space-between; }
+  .lg-hero { padding: 20px; }
+  .lg-card { padding: 16px; border-radius: 18px; }
+  .lg-row { padding: 12px 14px; gap: 10px; }
+  .lg-row-acts { opacity: 1; }
+  .lg-row-icon { width: 32px; height: 32px; border-radius: 10px; font-size: 13px; }
+  .lg-form-grid { grid-template-columns: 1fr; }
+  .lg-bars { height: 160px; gap: 6px; }
+}

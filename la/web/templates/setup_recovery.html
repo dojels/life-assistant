@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>请保存恢复码 · 默</title><style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center;
+         font: 16px/1.5 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+         background: #f2f2f7; color: #1c1c1e; }
+  @media (prefers-color-scheme: dark) { body { background: #000; color: #f2f2f7; } }
+  main { width: min(440px, calc(100vw - 40px)); padding: 28px; border-radius: 18px;
+         background: color-mix(in srgb, Canvas 92%, transparent);
+         box-shadow: 0 12px 40px rgb(0 0 0 / 0.12); }
+  h1 { margin: 0 0 6px; font-size: 22px; }
+  p { margin: 0 0 16px; opacity: .72; font-size: 14px; }
+  label { display: block; margin: 14px 0 6px; font-size: 14px; opacity: .8; }
+  input, select { width: 100%; box-sizing: border-box; padding: 12px 14px; font-size: 17px;
+          border-radius: 12px; border: 1px solid #c7c7cc; background: Canvas; color: inherit; }
+  input.code { font-family: ui-monospace, Consolas, monospace; letter-spacing: .12em; }
+  button, a.btn { display: block; width: 100%; box-sizing: border-box; margin-top: 20px;
+           padding: 13px; border: 0; border-radius: 12px; text-align: center;
+           text-decoration: none; font-size: 16px; font-weight: 600;
+           background: #0a84ff; color: white; }
+  .error { margin-top: 15px; padding: 10px 12px; border-radius: 10px;
+           background: #ff3b301a; color: #d70015; font-size: 14px; }
+  .code { margin: 18px 0; padding: 18px; border-radius: 14px; text-align: center;
+          font: 600 22px/1.4 ui-monospace, Consolas, monospace; letter-spacing: .12em;
+          background: #0a84ff14; color: #0a84ff; word-break: break-all; }
+  .hint { margin-top: 14px; font-size: 12px; opacity: .55; line-height: 1.6; }
+</style></head><body><main>
+  <h1>请保存这个恢复码</h1>
+  <p>忘记 PIN 时用它换新 PIN。它<strong>只显示这一次</strong>,请抄在纸上或存进密码管理器。</p>
+  <div class="code">{{ code }}</div>
+  <p class="hint">恢复码和 PIN 是两把钥匙：PIN 日常登录，恢复码只在忘记 PIN 时用。不要告诉别人，也不要截图发微信。</p>
+  <a class="btn" href="/chat">我已保存，进入</a>
+</main></body></html>

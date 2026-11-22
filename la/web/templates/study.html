@@ -1,0 +1,425 @@
+{% extends "base.html" %}
+{% block title %}错题 · 默{% endblock %}
+{% block body %}
+<div class="page">
+
+  <div class="page-head">
+    <div class="head-main">
+      <h1>错题</h1>
+      <p class="sub">拍照录入,按记忆规律自动排复习 —— 排程与推送都在本地。</p>
+    </div>
+  </div>
+
+  {% if ok %}<div class="ok" style="margin-bottom:14px">{{ ok }}</div>{% endif %}
+  {% if err %}<div class="warn" style="margin-bottom:14px">{{ err }}</div>{% endif %}
+
+  {# ---------------------------------------------------------- 页签(D111)
+     ⭐ 用户 2026-10-13:"错题界面下拉太长了,采用切换页面的设计会不会更好,每页都显示适当的内容"。
+        四个页签各管一件事:复习卡可以很长、错题本可以很长,但它们不该同时挤在一屏里。
+        纯链接实现(服务端只渲染当前那一页)—— 不需要 JS,刷新/分享/后退都正常。 #}
+  <div class="segmented tabs" role="tablist">
+    <a role="tab" aria-selected="{{ 'true' if tab == 'review' else 'false' }}"
+       href="/study?tab=review" class="{{ 'on' if tab == 'review' else '' }}">
+      今日复习{% if push.due_count %}<span class="count">{{ push.due_count }}</span>{% endif %}
+    </a>
+    <a role="tab" aria-selected="{{ 'true' if tab == 'problems' else 'false' }}"
+       href="/study?tab=problems" class="{{ 'on' if tab == 'problems' else '' }}">
+      错题本{% if counts.total %}<span class="count">{{ counts.total }}</span>{% endif %}
+    </a>
+    <a role="tab" aria-selected="{{ 'true' if tab == 'weak' else 'false' }}"
+       href="/study?tab=weak" class="{{ 'on' if tab == 'weak' else '' }}">
+      薄弱点{% if stats.weak_points %}<span class="count">{{ stats.weak_points|length }}</span>{% endif %}
+    </a>
+    <a role="tab" aria-selected="{{ 'true' if tab == 'intake' else 'false' }}"
+       href="/study?tab=intake" class="{{ 'on' if tab == 'intake' else '' }}">
+      录入{% if pending_candidates %}<span class="count">{{ pending_candidates }}</span>{% endif %}
+    </a>
+  </div>
+
+  {% if tab == 'review' %}
+  {# ---------------------------------------------------------- 今天的推送 #}
+  <section class="card tinted push-card">
+    <div class="push-row">
+      <div class="push-main">
+        <div class="push-title">
+          {% if settings.student_name %}{{ settings.student_name }}的复习{% else %}每日复习推送{% endif %}
+          <span class="tag {{ 'confirmed' if push.push_enabled else 'void' }}">
+            {{ '已开启' if push.push_enabled else '已关闭' }}
+          </span>
+        </div>
+        <div class="push-sub">
+          每天 <strong>{{ settings.push_time_local }}</strong> 推送 · 最多
+          <strong>{{ settings.push_daily_limit }}</strong> 道 ·
+          今天到期 <strong>{{ push.due_count }}</strong> 道 ·
+          {% if pushed_today %}今天已推送{% elif push.ready %}等调度器推送{% else %}还没到推送时间{% endif %}
+        </div>
+      </div>
+      <div class="push-act">
+        <a class="pill tinted" href="#today">开始复习</a>
+        <form method="post" action="/study/sheet" style="display:inline">
+          <input type="hidden" name="_idem" value="{{ idem() }}">
+          <button type="submit" class="pill">出错题卷</button>
+        </form>
+      </div>
+    </div>
+
+    {% if pushed_today %}
+    <details class="push-text">
+      <summary>看今天推送的清单</summary>
+      <pre class="raw">{{ pushed_today.text }}</pre>
+    </details>
+    {% endif %}
+
+    <details class="push-text">
+      <summary>推送设置</summary>
+      <form method="post" action="/study/settings" class="stack" style="margin-top:10px">
+        <input type="hidden" name="_idem" value="{{ idem() }}">
+        <div class="field">
+          <label for="s-time">推送时间</label>
+          <div class="field-body">
+            <input id="s-time" type="time" name="push_time" value="{{ settings.push_time_local }}">
+            <label class="switch"><input type="checkbox" name="enabled" value="1"
+              {{ 'checked' if settings.push_enabled else '' }}><span class="switch-track"></span> 每天推送</label>
+          </div>
+        </div>
+        <div class="field">
+          <label for="s-limit">每日上限</label>
+          <div class="field-body">
+            <input id="s-limit" type="number" name="daily_limit" min="1" max="50"
+                   value="{{ settings.push_daily_limit }}">
+            <span class="field-note">道(一次别压太多)</span>
+          </div>
+        </div>
+        <div class="field">
+          <label>推送给</label>
+          <div class="field-body" style="flex-wrap:wrap;gap:8px 14px">
+            {% for m in push_members %}
+            <div style="display:flex;flex-direction:column;gap:2px;min-width:150px">
+              <label style="display:inline-flex;align-items:center;gap:7px;cursor:pointer;white-space:nowrap">
+                <input type="checkbox" name="targets" value="{{ m.id }}"
+                       style="flex:0 0 auto;width:18px;height:18px;margin:0;accent-color:#0a84ff"
+                       {{ 'checked' if m.id in settings.push_targets else '' }}>
+                <span>{{ m.name }}{% if not m.bound %} · 未绑微信{% endif %}</span>
+              </label>
+              {% if m.note %}<span class="field-note" style="color:#b26a00">{{ m.note }}</span>{% endif %}
+              {% if m.error %}<span class="field-note" style="color:#c0392b">今天没推出去:{{ m.error }}</span>{% endif %}
+            </div>
+            {% endfor %}
+            {% if not push_members %}<span class="field-note">还没有成员</span>{% endif %}
+          </div>
+        </div>
+        <div class="field-help">
+          <strong>不勾 = 所有已绑微信的成员都收到</strong>;勾了就只推给勾中的人(可多选)。
+          只有绑了微信的成员才收得到 —— 去「设置 → 微信」给成员绑联系人。
+        </div>
+
+        <div class="field">
+          <label for="s-student-id">默认学生</label>
+          <div class="field-body">
+            <select id="s-student-id" name="student_id">
+              {% for s in students %}
+              <option value="{{ s.id }}" {{ 'selected' if s.id == settings.student_id else '' }}>
+                {{ s.name }}{% if s.grade %} · {{ s.grade }}{% endif %}
+              </option>
+              {% endfor %}
+            </select>
+            <input id="s-student" type="text" name="student_name"
+                   placeholder="或新建一个(填名字)" style="max-width:190px">
+          </div>
+        </div>
+        <div class="field-help">
+          错题是<strong>某个学生</strong>的:换学生只换默认归属,已录入的错题仍跟着原来那个学生。
+        </div>
+        <div class="field">
+          <label>识别补全</label>
+          <div class="field-body">
+            <label class="switch"><input type="checkbox" name="solve_on_recognize" value="1"
+              {{ 'checked' if settings.solve_on_recognize else '' }}><span class="switch-track"></span>
+              照片上没有答案时,让模型顺手解出来</label>
+          </div>
+        </div>
+        <div class="field-help">{{ push.schedule_note }}</div>
+        <button type="submit">保存设置</button>
+      </form>
+    </details>
+  </section>
+
+  {# ---------------------------------------------------------- 今日复习 #}
+  <div class="section-head" id="today">
+    <h2>今日复习</h2>
+    <span class="section-note">{{ queue|length }} 张卡 · 答完自动排下一次</span>
+  </div>
+  {% if merged_groups %}
+  <section class="card" style="margin-bottom:14px">
+    <div class="section-head" style="margin:0 0 10px">
+      <h2 style="font-size:16px">今天的合并听写 / 跟读</h2>
+      <span class="section-note">同一天的多道并成一段 · 语文和英语、听写和跟读各自分开</span>
+    </div>
+    {% for g in merged_groups %}
+    <div class="listen">
+      <span class="listen-tag">🔊 {{ g.label }} ·
+        {%- if g.kind == 'follow' %} {{ g.phrases|length }} 条{% else %} {{ g.words|length }} 个词{% endif %}
+        {%- if g.truncated %}(超出部分没并进来){% endif %}</span>
+      {% if g.audio_url %}
+      <audio controls preload="metadata" src="{{ g.audio_url }}"></audio>
+      {% else %}
+      <span class="muted">🔇 {{ g.error }}</span>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </section>
+  {% endif %}
+
+  <section class="card">
+    {% if queue %}
+    {% for card in queue %}
+    <div class="review">
+      <div class="stem">
+        <span class="subject-chip">{{ card.subject }}</span>{{ card.stem_text or "(图题,看照片)" }}
+      </div>
+
+      {# 🔊 听力/听写题的音频是**录入时**绑好的(见 D107)——
+         听力题没有声音就不是那道题,所以孩子端也要看得见播放器 #}
+      {% if card.audio_handle %}
+      <div class="listen">
+        <span class="listen-tag">🔊 {{ card.audio_label or "音频" }}</span>
+        <audio controls preload="metadata" src="{{ card.audio_handle }}"></audio>
+        {% if card.audio_purpose == "read_aloud" %}
+        <span class="muted" style="font-size:12.5px">先自己读一遍,再播放对照</span>
+        {% elif card.audio_purpose == "follow" %}
+        <span class="muted" style="font-size:12.5px">听一遍,再跟着读一遍</span>
+        {% endif %}
+      </div>
+      {% elif card.audio_error %}
+      <p class="muted">🔇 {{ card.audio_note }} —— 先让家长念一遍</p>
+      {% elif card.audio_hint %}
+      {# ⚠️ 连 audio_spec 都没有的听写题(手输的老数据):以前卡片上**什么提示都没有**,
+         孩子看到「语文听写,没听出来的词:…」却没有任何声音入口。 #}
+      <p class="muted">🔇 {{ card.audio_hint }} —— 先让家长念一遍(家长页可以补做音频)</p>
+      {% endif %}
+
+      {# 图形:矢量重绘优先(清晰、能缩放),没有就退到照片 #}
+      {% if card.figure_svg %}
+      <div class="figure">{{ card.figure_svg|safe }}</div>
+      {% elif card.figure_asset_id and not card.asset_ids %}
+      <div class="thumbs"><img class="shot" src="/assets/{{ card.figure_asset_id }}" alt="题目图形" loading="lazy"></div>
+      {% endif %}
+
+      {% if card.asset_ids %}
+      <div class="thumbs">
+        {% for asset_id in card.asset_ids %}
+        <a href="/assets/{{ asset_id }}" target="_blank" rel="noopener">
+          <img class="shot-sm" src="/assets/{{ asset_id }}" alt="题目照片" loading="lazy">
+        </a>
+        {% endfor %}
+      </div>
+      {% endif %}
+      <div class="sub">{{ card.guidance }}</div>
+      {# ⭐ 一次作答记到这道题**今天到期的所有单元**上(D108)——
+         以前是一单元一张卡,同一道题会连着出现三四遍 #}
+      <form method="post" action="/study/review/problem/{{ card.problem_id }}">
+        <input type="hidden" name="_idem" value="{{ idem() }}">
+        <div class="rating-row">
+          {# ⚠️ 两个按钮不能同色:「忘了」是负向,「会了」是正向。
+             第一个给中性灰,后面的给主色 —— 顺序就是语义,不另加判断。 #}
+          {% for b in card.buttons %}
+          <button name="rating" value="{{ b.rating }}"
+                  class="{{ 'neutral' if loop.first else '' }}">{{ b.label }}</button>
+          {% endfor %}
+        </div>
+      </form>
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="empty">
+      <span class="empty-mark">🌤️</span>
+      <span class="empty-title">今天没有要复习的题</span>
+      <span class="empty-sub">
+        {% if stats.next_due_local %}下一次有题可复习是 {{ stats.next_due_local }}。{% else %}录入错题后,复习单元会从明天开始排。{% endif %}
+      </span>
+    </div>
+    {% endif %}
+  </section>
+
+  {% elif tab == 'intake' %}
+  {# ---------------------------------------------------------- 录入 #}
+  {% if intake and intake.pending %}
+  <div class="info" style="margin:0 0 16px">
+    上次拍的照片还有 <strong>{{ intake.pending|length }}</strong> 条没确认 →
+    <a href="/study/intake/{{ intake.id }}">继续确认</a>
+  </div>
+  {% endif %}
+
+  <div class="two">
+    <section class="card">
+      <h2>拍照录错题</h2>
+      <form method="post" action="/study/upload" enctype="multipart/form-data" class="stack">
+        <input type="hidden" name="_idem" value="{{ idem() }}">
+        <label class="upload" for="shots">
+          <span class="upload-mark">📷</span>
+          <span class="upload-title">选照片 / 拍照</span>
+          <span class="upload-sub">一张可以是一道题,也可以是一整页(最多认 4 道)</span>
+          <input id="shots" type="file" name="files" accept="image/*" multiple required>
+        </label>
+        {% if students|length > 1 %}
+        <div class="field">
+          <label for="u-student">谁的</label>
+          <div class="field-body">
+            <select id="u-student" name="student_id">
+              {% for s in students %}
+              <option value="{{ s.id }}" {{ 'selected' if s.is_default else '' }}>{{ s.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        {% endif %}
+        <button type="submit">上传并识别</button>
+      </form>
+      <details class="about">
+        <summary>识别怎么走 · 隐私</summary>
+        <div class="about-body">
+          {% if vision_ready %}
+          <p>识别用视觉模型:自动分学科、抄题干、标知识点(会优先复用已有知识点)。
+            结果先落在<strong>候选区</strong>,你确认了才算录入。</p>
+          <p>照片原图存在本机 <code>data/media/</code>;识别时会把这张照片发给模型服务一次
+            —— 这是"自动识别"的代价。</p>
+          {% else %}
+          <p>当前是离线模式(LA_LLM_PROVIDER=fake)或没配密钥 —— 照片会照常存在本机,字段请手工填。</p>
+          {% endif %}
+        </div>
+      </details>
+    </section>
+
+    <section class="card">
+      <h2>手工录一道</h2>
+      <form method="post" action="/study/problem" class="stack">
+        <input type="hidden" name="_idem" value="{{ idem() }}">
+        <div class="field">
+          <label for="s-subject">学科</label>
+          <div class="field-body">
+            <select id="s-subject" name="subject" required>
+              {% for name in subjects %}<option value="{{ name }}">{{ name }}</option>{% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="field">
+          <label for="s-stem">题干</label>
+          <div class="field-body"><textarea id="s-stem" name="stem" rows="2" placeholder="3/4 + 1/6 = ?"></textarea></div>
+        </div>
+        <div class="field">
+          <label for="s-answer">答案</label>
+          <div class="field-body"><input id="s-answer" type="text" name="answer" placeholder="11/12"></div>
+        </div>
+        <div class="field">
+          <label for="s-kp">知识点</label>
+          <div class="field-body"><input id="s-kp" type="text" name="kp" placeholder="异分母分数加减, 通分"></div>
+        </div>
+        {% if students|length > 1 %}
+        <div class="field">
+          <label for="m-student">谁的</label>
+          <div class="field-body">
+            <select id="m-student" name="student_id">
+              {% for s in students %}
+              <option value="{{ s.id }}" {{ 'selected' if s.is_default else '' }}>{{ s.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        {% endif %}
+        <button type="submit">录入</button>
+      </form>
+      <p class="field-help">逗号分隔的知识点会各生成一个复习单元 —— 这样才知道卡在哪一步。</p>
+    </section>
+  </div>
+
+  {% elif tab == 'weak' %}
+  {# ---------------------------------------------------------- 薄弱点 #}
+  <div class="section-head">
+    <h2>薄弱知识点</h2>
+    <span class="section-note">{{ stats.schedule_note.split('。')[0] }}</span>
+  </div>
+  <section class="card flush">
+    {% if stats.weak_points %}
+    <div class="list" style="padding:4px 16px">
+      {% for w in stats.weak_points %}
+      <div class="row">
+        <span class="row-main">
+          <span class="row-title">{{ w.knowledge_point }}</span>
+          <span class="row-sub">错题 {{ w.problem_count }} · 单元 {{ w.unit_count }} · 答错 {{ w.lapses }}</span>
+        </span>
+        <span class="tag draft">{{ w.lapses }} 次</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty">
+      <span class="empty-mark">🎯</span>
+      <span class="empty-title">还没有知识点统计</span>
+      <span class="empty-sub">录入错题时填了知识点,这里就会按累计答错次数排序。</span>
+    </div>
+    {% endif %}
+  </section>
+
+  {% elif tab == 'problems' %}
+  {# ---------------------------------------------------------- 错题本
+     ⭐ 2026-11-09 重做:旧列表按 id 倒序 —— 最新录的排最前,而家长打开这一页
+        要的是"哪些今天要复习"。现在按逾期 → 今天 → 最近到期排,日期说人话,
+        学科用颜色点区分,有没有音频/照片一眼看得到。 #}
+  <div class="pl-bar">
+    <div class="pl-chips">
+      <a class="pl-chip{{ ' on' if not subject and not archived else '' }}"
+         href="/study?tab=problems">全部<span>{{ counts.total }}</span></a>
+      {% for name, n in counts.by_subject.items() %}
+      <a class="pl-chip{{ ' on' if subject == name else '' }}"
+         href="/study?tab=problems&subject={{ name }}">{{ name }}<span>{{ n }}</span></a>
+      {% endfor %}
+      <a class="pl-chip{{ ' on' if archived else '' }}"
+         href="/study?tab=problems&archived=1">已归档<span>{{ counts.archived }}</span></a>
+    </div>
+    <span class="pl-note">
+      {% if archived %}已归档 {{ counts.archived }} 道
+      {% else %}按最近要复习的排 · 共 {{ problem_cards|length }} 道{% endif %}
+    </span>
+  </div>
+
+  <section class="pl-list">
+    {% if problem_cards %}
+    {% for p in problem_cards %}
+    <a class="pl-row" href="/study/problem/{{ p.id }}">
+      <span class="pl-due {{ p.due_kind }}">{{ p.due_label }}</span>
+      <span class="pl-main">
+        <span class="pl-title">{{ p.stem }}</span>
+        <span class="pl-meta">
+          {# 圆点 + 这段说明包在**同一个** flex 子项里:拆开会在一行放不下时
+             把圆点单独挤到上一行(2026-11-09 手机实测)。 #}
+          <span class="pl-line">
+          <span class="pl-dot {{ p.subject_key }}"></span>
+          <span class="pl-tags">{{ p.subject }}
+            {%- if p.kps %} · {{ p.kps[:2]|join("、") }}{% if p.kps|length > 2 %} 等 {{ p.kps|length }} 个{% endif %}{% endif %}
+            {%- if p.reps %} · 复习 {{ p.reps }} 次{% endif %}
+            {%- if p.lapses %} · 答错 {{ p.lapses }} 次{% endif %}
+            <span class="pl-id">#{{ p.id }}</span></span>
+          </span>
+          {% if p.pending %}<span class="pl-flag">待确认</span>{% endif %}
+          {% if p.archived %}<span class="pl-flag quiet">已归档</span>{% endif %}
+        </span>
+      </span>
+      <span class="pl-side">
+        {% if p.has_audio %}<span class="pl-icon" title="有跟读/听写音频">🔊</span>{% endif %}
+        {% if p.photo %}<img class="pl-thumb" src="{{ p.photo }}" alt="题目照片" loading="lazy">{% endif %}
+      </span>
+      <span class="pl-chevron">›</span>
+    </a>
+    {% endfor %}
+    {% else %}
+    <div class="empty">
+      <span class="empty-mark">📚</span>
+      <span class="empty-title">还没有错题</span>
+      <span class="empty-sub">到「录入」页拍一张照片试试 —— 照片存在本机,识别时会把照片发给模型一次。</span>
+    </div>
+    {% endif %}
+  </section>
+  {% endif %}
+
+</div>
+{% endblock %}

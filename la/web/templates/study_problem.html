@@ -1,0 +1,379 @@
+{% extends "base.html" %}
+{% block title %}{{ problem.subject }} · 错题 #{{ problem.id }} · 默{% endblock %}
+{% block body %}
+<div class="page pp">
+
+  <a class="pp-back" href="/study?tab=problems">‹ 错题本</a>
+
+  {# 顶部只回答三个问题:哪一科、第几号、什么状态。其余内容按"家长想知道什么"往下排。 #}
+  <header class="pp-head">
+    <div class="pp-head-main">
+      <h1 class="pp-title">{{ problem.subject }} <span class="pp-num">#{{ problem.id }}</span></h1>
+      <p class="pp-meta">
+        {% if problem.student_name %}{{ problem.student_name }} · {% endif %}
+        {% if problem.grade %}{{ problem.grade }} · {% endif %}
+        {% if problem.status == 'archived' %}
+          已归档 · 不再进复习清单
+        {% elif due_hint %}
+          下次复习 <strong>{{ due_hint }}</strong>
+        {% elif problem.next_due_local %}
+          下次复习 {{ problem.next_due_local }}
+        {% else %}
+          还没有下一次复习
+        {% endif %}
+        {%- if problem.due_count %} · <strong>今天到期</strong>{% endif %}
+        {%- if problem.reps %} · 复习过 {{ problem.reps }} 次{% if problem.lapses %} · 答错 {{ problem.lapses }} 次{% endif %}
+        {%- else %} · 还没复习过{% endif %}
+      </p>
+    </div>
+    {# ⚠️ 待确认 = **助手/识别写进来的题,还没经你看过**。它不影响排程与推送,
+       只是一个"待你核对"的标记(见 D171)。 #}
+    <span class="tag {{ 'void' if problem.status == 'archived' else ('draft' if problem.status == 'pending' else 'confirmed') }}"
+          {% if problem.status == 'pending' %}title="这条是助手/识别写进来的,还没经你核对"{% endif %}>
+      {{ '已归档' if problem.status == 'archived' else ('待确认' if problem.status == 'pending' else '在学') }}
+    </span>
+  </header>
+
+  {% if problem.status == 'pending' %}
+  <div class="pp-banner">
+    <div>
+      <strong>待确认</strong> ——
+      这条是助手/识别写进来的,还没经你核对。确认只是去掉这个标记:
+      排程、推送、复习卡本来就已经在用它,不确认也照常复习。
+    </div>
+    <form method="post" action="/study/problem/{{ problem.id }}/confirm">
+      <button type="submit">✓ 确认无误</button>
+    </form>
+  </div>
+  {% endif %}
+
+  {% if problem.status == 'archived' %}
+  <div class="pp-banner pp-banner-quiet">
+    已归档:它不会再出现在复习清单和每日推送里,<strong>复习记录与统计都还在</strong>。
+    想继续练,在页面最下面点「恢复复习」。
+  </div>
+  {% endif %}
+
+  {% if ok %}<div class="ok" style="margin-bottom:14px">{{ ok }}</div>{% endif %}
+  {% if err %}<div class="warn" style="margin-bottom:14px">{{ err }}</div>{% endif %}
+
+  {# ------------------------------------------------ ① 这道题 #}
+  <section class="pp-card">
+    <div class="pp-q-grid{{ ' with-side' if assets else '' }}">
+      <div class="pp-q-main">
+        <span class="pp-label">题干</span>
+        <p class="pp-stem">{{ problem.stem_text or '（这道题没有文字题干，看右边的照片）' }}</p>
+
+        {% if problem.answer_text %}
+        <div class="pp-answer">
+          <span class="pp-answer-label">答案</span>
+          <span class="pp-answer-text">{{ problem.answer_text }}</span>
+        </div>
+        {% endif %}
+
+        {% if problem.explanation %}
+        <p class="pp-explain"><span>解析</span>{{ problem.explanation }}</p>
+        {% endif %}
+
+        {# 知识点按**复习单元的序号**排(整题之后依次),与下面「复习安排」的芯片同一个顺序;
+           按名字排会把主知识点排到后面去(实测 #25:「短语跟读」被排到「take care of 连读」之后)。 #}
+        {% set kp_chips = units|selectattr('ord', 'ne', 0)|selectattr('knowledge_point')|list %}
+        {% if kp_chips %}
+        <div class="pp-kps">
+          {% for u in kp_chips %}<span class="pp-kp">{{ u.knowledge_point }}</span>{% endfor %}
+        </div>
+        {% elif problem.knowledge_points %}
+        <div class="pp-kps">
+          {% for kp in problem.knowledge_points %}<span class="pp-kp">{{ kp }}</span>{% endfor %}
+        </div>
+        {% endif %}
+      </div>
+
+      {% if assets %}
+      {# 照片是**证据**:缩略图贴边放着,点开看原图 —— 文字题不该被一张空照片框占掉半屏 #}
+      <div class="pp-q-side">
+        <div class="pp-photos">
+          {% for a in assets %}
+          <a class="pp-photo" href="/assets/{{ a.id }}" target="_blank" rel="noopener" title="点开看大图">
+            <img src="/assets/{{ a.id }}" alt="题目照片" loading="lazy">
+          </a>
+          {% endfor %}
+        </div>
+        <span class="pp-dim">原照片 · 点开看大图</span>
+      </div>
+      {% endif %}
+    </div>
+
+    {% if materials.figure_svg or materials.figure_asset_id %}
+    <div class="pp-media">
+      {% if materials.figure_svg %}
+      <div class="pp-figure">{{ materials.figure_svg|safe }}</div>
+      {% if materials.figure_needs_check %}
+      <p class="pp-dim" style="margin-top:8px">⚠ 复核说原照片上可能没框全 —— 以原照片为准。</p>
+      {% endif %}
+      {% elif materials.figure_asset_id %}
+      <a class="pp-figure" href="/assets/{{ materials.figure_asset_id }}" target="_blank" rel="noopener">
+        <img src="/assets/{{ materials.figure_asset_id }}" alt="题目图形">
+      </a>
+      {% if materials.figure_rotation %}
+      <p class="pp-dim" style="margin-top:8px">照片是横躺的,已顺时针摆正 {{ materials.figure_rotation }}°。</p>
+      {% endif %}
+      {# ⭐ 2026-11-21:图形歪了/带进题干/切了一边,是模型估框的常态。
+         以前只能 --resolve-one --force(5–6 次模型调用);现在人点一下就重裁 ——
+         用**已经存下来的框** + 原照片,不调模型、不花钱。 #}
+      <div class="pp-figure-tools">
+        <form method="post" action="/study/problem/{{ problem.id }}/figure">
+          <input type="hidden" name="action" value="rotate_left">
+          <button class="neutral small" type="submit">↺ 逆时针 90°</button>
+        </form>
+        <form method="post" action="/study/problem/{{ problem.id }}/figure">
+          <input type="hidden" name="action" value="rotate_right">
+          <button class="neutral small" type="submit">↻ 顺时针 90°</button>
+        </form>
+        <form method="post" action="/study/problem/{{ problem.id }}/figure">
+          <input type="hidden" name="action" value="tighter">
+          <button class="neutral small" type="submit">收窄一点</button>
+        </form>
+        <form method="post" action="/study/problem/{{ problem.id }}/figure">
+          <input type="hidden" name="action" value="looser">
+          <button class="neutral small" type="submit">放大一点</button>
+        </form>
+        <span class="pp-dim">图不对就点一下 —— 立刻重裁,不调模型</span>
+      </div>
+      {% endif %}
+    </div>
+    {% elif materials.figure_source in ('crop', 'svg') %}
+    <p class="pp-dim" style="margin-top:14px">⚠ 识别说这道题有图形,但这次没取到 —— 出卷时会写明"图形没取到"。
+      想补回来:微信里让它重跑一次识别,或命令行 <code>--resolve-one {{ problem.id }} --force</code>。</p>
+    {% endif %}
+  </section>
+
+  {# ------------------------------------------------ ② 声音(有才显示)
+     ⭐ 用户 2026-10-13:"试题如果入库时生成了语音或者图片,在界面里要能看到,方便用户确认"。
+        声音是**录入那一刻**做好并绑在题上的(D107);没有声音的普通题,这里整块都不出现。 #}
+  {% if materials.audio_handle or materials.audio_error or materials.audio_hint %}
+  <section class="pp-card">
+    <div class="pp-audio-head">
+      <span class="pp-label">声音</span>
+      {% if materials.audio_label %}<span class="pp-audio-tag">{{ materials.audio_label }}</span>{% endif %}
+      {% if materials.audio_seconds %}<span class="pp-dim">{{ "%.1f"|format(materials.audio_seconds) }} 秒</span>{% endif %}
+      {% if materials.audio_handle and problem.status != 'archived' %}
+      {# 重做**不藏在折叠里**:改了题干要重做时,家长得一眼找得到这个入口(D171 的原话) #}
+      <form class="pp-audio-redo" method="post" action="/study/problem/{{ problem.id }}/audio">
+        <button type="submit" class="neutral small">🔁 按当前题干重做</button>
+      </form>
+      {% endif %}
+    </div>
+
+    {% if materials.audio_handle %}
+    <div class="pp-audio-row">
+      <audio controls preload="metadata" src="{{ materials.audio_handle }}"></audio>
+      <div class="pp-audio-info">
+        {% if materials.audio_text %}
+        <p class="pp-audio-text">要念的内容:<strong>{{ materials.audio_text }}</strong></p>
+        {% endif %}
+        {% if materials.audio_purpose == "follow" %}
+        <p class="pp-audio-text">🗣 跟读题:整句连读两遍、中间留白 —— 先听,再跟着念。
+          短语是<strong>整句</strong>念的,不会拆成一个个词。</p>
+        {% elif materials.audio_purpose == "read_aloud" %}
+        <p class="pp-audio-text">👂 认读题:先让孩子自己读一遍,再点播放听标准发音对照。</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <details class="pp-more">
+      <summary>录入时生成并绑定{% if materials.audio_voice %} · {{ materials.audio_voice }}{% endif %}{% if materials.audio_provider %} · {{ materials.audio_provider }}{% endif %}</summary>
+      <p class="pp-dim">以后每次复习、每张卷子听到的都是这一段,不会重新合成。
+        改了题干或答案再点「重做」:内容没变会沿用这一段,变了才重新合成(不会白花钱)。</p>
+    </details>
+
+    {% elif materials.audio_error %}
+    <p class="pp-audio-text">🔇 {{ materials.audio_note }}<br>
+      出卷时这一题会写明"🔇 请家长念一遍",不会假装有声音。</p>
+    <form method="post" action="/study/problem/{{ problem.id }}/audio" style="margin-top:10px">
+      <button type="submit" class="neutral small">🔊 再试一次</button>
+    </form>
+
+    {% elif materials.audio_hint %}
+    {# ⚠️ 手输/聊天里录进来的听写题以前**根本不做声音**,页面还一律写"这题不需要声音"
+       —— 实测 2026-10-26 的 #14(语文听写 涌现、结婚)就这么哑了。 #}
+    <p class="pp-audio-text">🔇 {{ materials.audio_hint }} —— 这题要出声,但音频还没做过。</p>
+    {% if materials.audio_fixable %}
+    <form method="post" action="/study/problem/{{ problem.id }}/audio" style="margin-top:10px">
+      <button type="submit" class="ghost small">🔊 补做音频</button>
+    </form>
+    <p class="pp-dim" style="margin-top:8px">
+      补做用的是题干/答案里读出来的内容;做好之后复习卡、当天合并听写、错题卷都用这一段。
+    </p>
+    {% else %}
+    <p class="pp-dim">补做也做不出来:题干和答案里读不出要念的内容 ——
+      先把内容写进题干(例如「听写词语:涌现、结婚」)再来。</p>
+    {% endif %}
+    {% endif %}
+  </section>
+  {% endif %}
+
+  {# ------------------------------------------------ ③ 复习安排 #}
+  <div class="pp-sec">
+    <h2>复习安排</h2>
+    <span class="pp-dim">{{ units|length }} 个单元 · 一次作答一起记</span>
+  </div>
+  <section class="pp-card">
+    <div class="pp-next">
+      <span class="pp-next-label">下次复习</span>
+      <strong class="pp-next-day">{{ due_hint or problem.next_due_local or '—' }}</strong>
+      {% if due_hint %}<span class="pp-next-date">{{ problem.next_due_local }}</span>{% endif %}
+      {% if problem.due_count %}<span class="pp-now">今天要做</span>{% endif %}
+    </div>
+    <ul class="pp-units">
+      {% for u in units %}
+      <li class="pp-unit{{ ' paused' if u.suspended else '' }}">
+        {% if u.ord == 0 %}整题{% else %}{{ u.knowledge_point or ('单元 #' ~ u.id) }}{% endif %}
+        {% if not units_same_due %}<span class="pp-unit-date">{{ u.due_date_local }}</span>{% endif %}
+        {% if u.suspended %}<span class="pp-unit-date">已暂停</span>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    <details class="pp-more">
+      <summary>这个复习节奏是怎么排的</summary>
+      <p class="pp-dim">{{ engine_note }}</p>
+      <p class="pp-dim">一个知识点一个单元:答题时才分得清他卡在「通分」还是「约分」,
+        复习间隔也按每一处薄弱分别排 —— 整题那个单元照旧一起排。</p>
+    </details>
+  </section>
+
+  {# ------------------------------------------------ ④ 复习历史 #}
+  <div class="pp-sec">
+    <h2>复习历史</h2>
+    <span class="pp-dim">{% if history %}共 {{ history|length }} 次 · 一次作答记到当天到期的所有单元{% else %}还没有记录{% endif %}</span>
+  </div>
+  <section class="pp-card">
+    {% if history %}
+    {# ⚠️ 一次作答会记到这道题**当天到期的所有单元**上(整题 + 每个知识点各一条日志)。
+       这里按"同一次"合并显示 —— 否则家长会以为每天复习了两三遍(2026-10-27 问过)。 #}
+    {# 复习状态是 FSRS 的术语;家长看的是"这题以前会不会、下次隔多久"(中文一档就够) #}
+    {% set STATE_NAME = {'new': '新题', 'learning': '学习中', 'review': '复习中', 'relearning': '重学'} %}
+    <ol class="pp-timeline">
+      {% for h in history %}
+      <li>
+        <span class="pp-h-time">{{ h.ts_local }}</span>
+        <span class="pp-rate {{ 'r1' if h.rating == 1 else ('r2' if h.rating == 2 else ('r3' if h.rating == 3 else 'r4')) }}">
+          {{ '忘了' if h.rating == 1 else ('有点难' if h.rating == 2 else ('会了' if h.rating == 3 else '太简单')) }}
+        </span>
+        <span class="pp-h-detail">
+          {%- if h.uniform -%}
+            <b>间隔 {{ "%g"|format(h.interval_days or 0) }} 天</b> ·
+            {{ STATE_NAME.get(h.state_before, h.state_before) }} → {{ STATE_NAME.get(h.state_after, h.state_after) }}
+          {%- else -%}
+            {% for u in h.units %}{{ u.name }} 间隔 {{ "%g"|format(u.interval_days or 0) }} 天 {{ STATE_NAME.get(u.state_before, u.state_before) }} → {{ STATE_NAME.get(u.state_after, u.state_after) }}{% if not loop.last %} · {% endif %}{% endfor %}
+          {%- endif -%}
+          {%- if h.units|length > 1 -%}
+            <span class="pp-h-units">这一次记到了 {{ h.units|length }} 个单元 · {{ h.units|map(attribute='name')|join('、') }}</span>
+          {%- endif -%}
+        </span>
+      </li>
+      {% endfor %}
+    </ol>
+    {% else %}
+    <p class="pp-empty">🕘 还没复习过 —— 首次复习排在录入的第二天;答一次「会了 / 忘了」,这里就有记录了。</p>
+    {% endif %}
+  </section>
+
+  {# ------------------------------------------------ ⑤ 修改(折叠) #}
+  <details class="pp-card pp-fold">
+    <summary>修改这道题</summary>
+    <div class="pp-fold-body">
+      <form method="post" action="/study/problem/{{ problem.id }}/update" class="stack">
+        <input type="hidden" name="_idem" value="{{ idem() }}">
+        <div class="field">
+          <label for="p-subject">学科</label>
+          <div class="field-body">
+            <select id="p-subject" name="subject" required>
+              {% for name in subjects %}
+              <option value="{{ name }}" {{ 'selected' if problem.subject == name else '' }}>{{ name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="field">
+          <label for="p-stem">题干</label>
+          <div class="field-body"><textarea id="p-stem" name="stem" rows="3">{{ problem.stem_text or '' }}</textarea></div>
+        </div>
+        <div class="field">
+          <label for="p-answer">答案</label>
+          <div class="field-body"><input id="p-answer" type="text" name="answer" value="{{ problem.answer_text or '' }}"></div>
+        </div>
+        <div class="field">
+          <label for="p-exp">解析</label>
+          <div class="field-body"><input id="p-exp" type="text" name="explanation" value="{{ problem.explanation or '' }}"></div>
+        </div>
+        <div class="field">
+          <label for="p-kp">知识点</label>
+          <div class="field-body"><input id="p-kp" type="text" name="kp" value="{{ problem.knowledge_points|join(', ') }}"></div>
+        </div>
+        <div class="field">
+          <label for="p-grade">年级</label>
+          <div class="field-body"><input id="p-grade" type="text" name="grade" value="{{ problem.grade or '' }}"></div>
+        </div>
+        <div class="field">
+          <label for="p-source">来源</label>
+          <div class="field-body"><input id="p-source" type="text" name="source" value="{{ problem.source or '' }}" placeholder="单元测 / 作业"></div>
+        </div>
+        <div class="field">
+          <label for="p-student">谁的</label>
+          <div class="field-body">
+            <select id="p-student" name="student_id">
+              {% for s in students %}
+              <option value="{{ s.id }}" {{ 'selected' if s.id == problem.student_id else '' }}>{{ s.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="field-help">
+          知识点增删会同步到复习单元:新增的补一个单元,移除的<strong>暂停</strong>它的单元(进度留着,不会删)。
+          改内容<b>不会</b>重置复习进度。
+        </div>
+        <button type="submit" style="align-self:flex-start">保存修改</button>
+      </form>
+    </div>
+  </details>
+
+  {# ------------------------------------------------ ⑥ 归档 / 删除(折叠) #}
+  <details class="pp-card pp-fold pp-danger">
+    <summary>归档与删除</summary>
+    <div class="pp-fold-body">
+      <p class="pp-dim">归档 = 从复习清单和推送里拿掉,但<strong>复习记录与统计口径都保留</strong>。
+        录错了的题、暂时不想练的题,用它。</p>
+      <div class="pp-actions">
+        <form method="post" action="/study/problem/{{ problem.id }}/status">
+          {% if problem.status == 'archived' %}
+          <input type="hidden" name="action" value="restore">
+          <button type="submit" class="neutral">恢复复习</button>
+          {% else %}
+          <input type="hidden" name="action" value="archive">
+          <button type="submit" class="neutral">归档这道题</button>
+          {% endif %}
+        </form>
+        {# ⭐ 2026-11-09:"录错的,智能体自己也删除不掉" —— 归档只是从清单里拿掉,
+           库里还占着一行;没复习过的题(纯属录错)应该能真删。 #}
+        {% if not problem.reps %}
+        <form method="post" action="/study/problem/{{ problem.id }}/delete"
+              onsubmit="return confirm('彻底删除这道题?它还没复习过,删了就找不回来了。')">
+          <button type="submit" class="danger">🗑 彻底删除</button>
+        </form>
+        {% endif %}
+      </div>
+      {% if problem.reps %}
+      <p class="pp-dim" style="margin-top:10px">
+        这题已经复习过 {{ problem.reps }} 次 —— 只有归档,没有删除:复习记录是统计与调参的依据。
+      </p>
+      {% else %}
+      <p class="pp-dim" style="margin-top:10px">
+        彻底删除只对<strong>没复习过</strong>的题有效(录错、重复录入),删掉不影响任何统计。
+      </p>
+      {% endif %}
+    </div>
+  </details>
+
+</div>
+{% endblock %}

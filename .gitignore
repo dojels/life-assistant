@@ -1,0 +1,39 @@
+# ============ 运行时数据(默认不入库) ============
+data/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# ============ 密钥与本地配置 ============
+.env
+.env.*
+!.env.example
+settings.yaml
+
+# ============ Python ============
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ============ 编辑器 / 系统 ============
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# ============ 临时目录与日志 ============
+_scratch/
+_tmp/
+.tmp-*/
+*.log

@@ -1,0 +1,234 @@
+{% extends "base.html" %}
+{% block title %}唤醒 · 默{% endblock %}
+{% block body %}
+<div class="page wide">
+
+  <div class="page-head">
+    <div class="head-main">
+      <h1>唤醒</h1>
+      <p class="sub">到点让小默<strong>自己跑一次</strong>:检索、查账、写待办,然后决定要不要告诉你。
+        没问题就静默结束;写了数据或发现问题,才发到微信。</p>
+    </div>
+    <div class="head-actions">
+      <span class="page-meta">任务是<strong>你定的</strong>,她不能给自己排任务</span>
+    </div>
+  </div>
+
+  {% if flash %}<p class="warn">{{ flash }}</p>{% endif %}
+  {% if paused %}
+  <p class="warn"><strong>已全局暂停</strong> —— 所有唤醒都不会跑。管理员可以在页面底部恢复。</p>
+  {% endif %}
+
+  <div class="metric-grid">
+    <div class="metric">
+      <div class="metric-label">我的任务</div>
+      <div class="metric-value">{{ jobs|length }}<span class="metric-unit">/ {{ max_jobs }}</span></div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">今天运行</div>
+      <div class="metric-value">{{ runs_today }}<span class="metric-unit">/ {{ max_runs }}</span></div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">本月 token</div>
+      <div class="metric-value" style="font-size:18px">{{ month_usage.total_tokens }}</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">微信报告</div>
+      <div class="metric-value" style="font-size:16px">
+        {% if wechat_bound %}已绑定{% else %}未绑定{% endif %}
+      </div>
+    </div>
+  </div>
+
+  {% if not wechat_bound %}
+  <p class="warn">
+    你还没绑定微信:唤醒报告只会留在<strong>这一页</strong>,不会发到手机。
+    到「设置」里绑定微信后再建任务。
+  </p>
+  {% endif %}
+
+  <div class="section-head">
+    <h2>新建任务</h2>
+    <span class="section-note">每天/每周到点跑一次;最多 {{ max_jobs }} 条</span>
+  </div>
+  <section class="card">
+    <form method="post" action="/wake/jobs">
+      <input type="hidden" name="_idem" value="{{ idem() }}">
+      <div class="field">
+        <label for="wake-title">任务名</label>
+        <div class="field-body">
+          <input id="wake-title" name="title" maxlength="60" required
+                 placeholder="例如:周日核对账本" autocomplete="off">
+        </div>
+      </div>
+      <div class="field">
+        <label for="wake-instruction">唤醒时要她做什么</label>
+        <div class="field-body">
+          <textarea id="wake-instruction" name="instruction" rows="4" maxlength="500" required
+                    placeholder="例如:核对本周账本:有没有未分类、重复、金额异常的支出;有问题告诉我,没问题就安静结束。"></textarea>
+          <span class="field-note">
+            写清“什么算有问题”。删除/移动/取消会被系统拒绝,她会写进报告让你回来做。
+          </span>
+        </div>
+      </div>
+      <div class="field">
+        <label>什么时候</label>
+        <div class="field-body">
+          <select name="freq">
+            <option value="daily">每天</option>
+            <option value="weekly">每周</option>
+          </select>
+          <input type="time" name="time_local" value="19:00" required>
+          <select name="weekday">
+            <option value="">每周几(选每周时用)</option>
+            <option value="1">周一</option><option value="2">周二</option>
+            <option value="3">周三</option><option value="4">周四</option>
+            <option value="5">周五</option><option value="6">周六</option>
+            <option value="7">周日</option>
+          </select>
+        </div>
+      </div>
+      <button type="submit">建好</button>
+    </form>
+  </section>
+
+  <div class="section-head">
+    <h2>我的任务</h2>
+    <span class="section-note">“试跑”只读、不发送;正式跑才会按规则写入并报告</span>
+  </div>
+  {% if not jobs %}
+  <div class="empty"><span class="empty-mark">·</span>还没有唤醒任务。上面建一条,比如“每周日 19:00 核对本周账本”。</div>
+  {% endif %}
+  {% for job in jobs %}
+  <section class="card">
+    <div class="section-head" style="margin-top:0">
+      <h3>{{ job.title }}</h3>
+      <span class="tag">{{ job.schedule_text }}</span>
+      <span class="tag {% if job.enabled %}confirmed{% else %}draft{% endif %}">
+        {{ "开着" if job.enabled else "已暂停" }}
+      </span>
+    </div>
+    <p class="muted">下次:{{ job.next_text }} · 上次:{{ job.last_text }} · {{ job.last_status }}</p>
+    <p>{{ job.instruction }}</p>
+    <div class="chip-row">
+      <form method="post" action="/wake/jobs/{{ job.id }}/run" style="display:inline">
+        <input type="hidden" name="_idem" value="{{ idem() }}">
+        <input type="hidden" name="dry_run" value="1">
+        <button type="submit">试跑(只读)</button>
+      </form>
+      <form method="post" action="/wake/jobs/{{ job.id }}/run" style="display:inline">
+        <input type="hidden" name="_idem" value="{{ idem() }}">
+        <input type="hidden" name="dry_run" value="0">
+        <button type="submit">立即运行</button>
+      </form>
+      <form method="post" action="/wake/jobs/{{ job.id }}/toggle" style="display:inline">
+        <input type="hidden" name="_idem" value="{{ idem() }}">
+        <input type="hidden" name="enabled" value="{{ '0' if job.enabled else '1' }}">
+        <button type="submit">{{ "暂停" if job.enabled else "恢复" }}</button>
+      </form>
+      <form method="post" action="/wake/jobs/{{ job.id }}/delete" style="display:inline"
+            onsubmit="return confirm('删掉这条唤醒任务?已跑过的记录会留着。')">
+        <input type="hidden" name="_idem" value="{{ idem() }}">
+        <button type="submit">删除</button>
+      </form>
+    </div>
+    <details class="about">
+      <summary>改任务</summary>
+      <div class="about-body">
+        <form method="post" action="/wake/jobs/{{ job.id }}/save">
+          <input type="hidden" name="_idem" value="{{ idem() }}">
+          <div class="field">
+            <label>任务名</label>
+            <div class="field-body"><input name="title" maxlength="60" value="{{ job.title }}" required></div>
+          </div>
+          <div class="field">
+            <label>唤醒要求</label>
+            <div class="field-body">
+              <textarea name="instruction" rows="4" maxlength="500" required>{{ job.instruction }}</textarea>
+            </div>
+          </div>
+          <div class="field">
+            <label>什么时候</label>
+            <div class="field-body">
+              <select name="freq">
+                <option value="daily" {% if job.freq == 'daily' %}selected{% endif %}>每天</option>
+                <option value="weekly" {% if job.freq == 'weekly' %}selected{% endif %}>每周</option>
+              </select>
+              <input type="time" name="time_local" value="{{ job.time_local }}" required>
+              <select name="weekday">
+                <option value="">每周几</option>
+                {% for n, label in [(1,'周一'),(2,'周二'),(3,'周三'),(4,'周四'),(5,'周五'),(6,'周六'),(7,'周日')] %}
+                <option value="{{ n }}" {% if job.weekday == n %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          <label class="force-line">
+            <input type="checkbox" name="allow_writes" value="1" {% if job.allow_writes %}checked{% endif %}>
+            允许她写数据(只限追加型:记账、记待办、加笔记;删除/移动/取消永远拒绝)
+          </label>
+          <button type="submit">保存</button>
+        </form>
+      </div>
+    </details>
+  </section>
+  {% endfor %}
+
+  <div class="section-head">
+    <h2>最近运行</h2>
+    <span class="section-note">失败与“中断”必须看得见,不能静默</span>
+  </div>
+  <section class="card">
+    {% if not runs %}
+    <div class="empty">还没有跑过。建一条任务,或者点上面的“试跑”。</div>
+    {% else %}
+    <table>
+      <thead><tr><th>时间</th><th>任务</th><th>结果</th><th>写入</th><th>说明</th></tr></thead>
+      <tbody>
+      {% for run in runs %}
+      <tr>
+        <td>{{ run.started }}</td>
+        <td>{{ run.title }}{% if run.dry_run %} <span class="tag">试跑</span>{% endif %}</td>
+        <td>{{ run.status_text }}</td>
+        <td>{{ run.writes }}{% if run.receipts %} <span class="muted">#{{ run.receipts|join('、#') }}</span>{% endif %}</td>
+        <td>{{ run.summary or run.error }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </section>
+
+  <div class="section-head">
+    <h2>报告送达</h2>
+    <span class="section-note">微信窗口关着时先排队,开了再发;48 小时没发出去就过期</span>
+  </div>
+  <section class="card">
+    {% if not reports %}
+    <div class="empty">还没有待送达或已送达的报告。</div>
+    {% else %}
+    {% for report in reports %}
+    <div style="padding:10px 0;border-bottom:1px solid var(--line, #e5e5ea)">
+      <p><strong>{{ report.title }}</strong>
+        <span class="tag">{{ report.status_text }}</span>
+        <span class="muted">{{ report.created }}</span></p>
+      <p class="muted" style="white-space:pre-wrap">{{ report.text }}</p>
+    </div>
+    {% endfor %}
+    {% endif %}
+  </section>
+
+  {% if is_admin %}
+  <div class="section-head"><h2>管理员</h2><span class="section-note">全局暂停会停掉所有人的唤醒</span></div>
+  <section class="card">
+    <form method="post" action="/wake/pause">
+      <input type="hidden" name="_idem" value="{{ idem() }}">
+      <input type="hidden" name="paused" value="{{ '0' if paused else '1' }}">
+      <button type="submit">{{ "恢复所有唤醒" if paused else "全局暂停所有唤醒" }}</button>
+    </form>
+    <p class="muted">每人每天最多 {{ max_runs }} 次;单次唤醒最多写 20 条。暂停不影响已经排队的报告送达。</p>
+  </section>
+  {% endif %}
+
+</div>
+{% endblock %}

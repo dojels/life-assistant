@@ -1,0 +1,754 @@
+{% extends "base.html" %}
+{% block title %}健康 · 默{% endblock %}
+{% block body %}
+<div class="page wide health">
+
+  <header class="pg-top">
+    <div class="pg-heading">
+      <h1>健康</h1>
+      <p class="pg-sub">
+        {{ today.date }}
+        <span class="pg-dot">·</span>
+        {% if today.device.has_data %}
+          来自 iPhone 健康{% if sync_context.syncs %}(上次同步 {{ sync_context.syncs[0].ts[:16] | replace('T', ' ') }}){% endif %}
+        {% else %}
+          还没有从手机同步过
+        {% endif %}
+        <span class="pg-dot">·</span>这一页不需要模型
+      </p>
+    </div>
+    <div class="pg-tools">
+      <a class="pg-btn ghost" id="hl-weight-open" href="/health?tab={{ tab }}&compose=weight">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M5 8h14l1.5 12h-17Z"/><path d="M9 8a3 3 0 0 1 6 0"/></svg>
+        记体重
+      </a>
+      <a class="pg-btn primary" id="hl-workout-open" href="/health?tab={{ tab }}&compose=workout">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M6.5 8.5v7M17.5 8.5v7M4 10.5v3M20 10.5v3M6.5 12h11"/></svg>
+        记运动
+      </a>
+    </div>
+  </header>
+
+  {% if ok %}<div class="ok" style="margin-bottom:14px">{{ ok }}</div>{% endif %}
+  {% if err %}<div class="warn" style="margin-bottom:14px">{{ err }}</div>{% endif %}
+
+  {# 四个页签(D181,与 D111/D112 同一套做法):纯链接 + 服务端只渲染当前那页。
+     「今天」是默认 —— 点开健康页最想知道的是"我现在怎么样",不是"三个月前的曲线"。 #}
+  <div class="segmented tabs" role="tablist">
+    <a role="tab" aria-selected="{{ 'true' if tab == 'today' else 'false' }}"
+       href="/health?tab=today" class="{{ 'on' if tab == 'today' else '' }}">今天</a>
+    <a role="tab" aria-selected="{{ 'true' if tab == 'trend' else 'false' }}"
+       href="/health?tab=trend&metric={{ metric }}&days={{ days }}" class="{{ 'on' if tab == 'trend' else '' }}">趋势</a>
+    <a role="tab" aria-selected="{{ 'true' if tab == 'energy' else 'false' }}"
+       href="/health?tab=energy" class="{{ 'on' if tab == 'energy' else '' }}">能量</a>
+    <a role="tab" aria-selected="{{ 'true' if tab == 'sync' else 'false' }}"
+       href="/health?tab=sync" class="{{ 'on' if tab == 'sync' else '' }}">
+      同步{% if not today.device.has_data %}<span class="count">!</span>{% endif %}
+    </a>
+  </div>
+
+{% if tab == 'today' %}
+  {# ---------------------------------------------------------------- 今天
+     三个环 + 昨夜睡眠 + 今天的运动 + 最新读数。每一格都允许"没有数据":
+     没有数据就写没有,不写 0 —— 0 会被读成"今天没动"。 #}
+  <section class="pg-card hl-rings">
+    <div class="pg-card-head">
+      <h2>今天</h2>
+      <span class="pg-card-note">参考目标,不是任务</span>
+    </div>
+    <div class="hl-ring-row">
+      {% for ring in today.rings %}
+      <div class="hl-ring {{ ring.metric }}">
+        <div class="hl-ring-dial">
+          <svg viewBox="0 0 84 84" role="img" aria-label="{{ ring.name }}">
+            <circle class="hl-ring-track" cx="42" cy="42" r="34"/>
+            {% if ring.percent is not none %}
+            <circle class="hl-ring-fill" cx="42" cy="42" r="34"
+                    stroke-dasharray="{{ (ring.percent * 2.136) | round(1) }} 213.6"
+                    {% if ring.done %}data-done="1"{% endif %}/>
+            {% endif %}
+          </svg>
+          <span class="hl-ring-value">
+            {%- if ring.value is not none %}{{ ring.value | int }}{% else %}—{% endif -%}
+          </span>
+        </div>
+        <span class="hl-ring-label">{{ ring.name }}</span>
+        <span class="hl-ring-sub">
+          {%- if ring.value is not none %}目标 {{ ring.target | int }}{% else %}还没有数据{% endif -%}
+        </span>
+      </div>
+      {% endfor %}
+    </div>
+    {% if not today.device.has_data %}
+    <p class="hl-onboard">
+      步数、步行距离、活动能量、锻炼分钟、爬楼层 —— 这些 <b>iPhone 自己就记</b>,
+      不需要手表。去 <a href="/health?tab=sync">同步</a> 打开它们的来路;
+      也可以先手工记体重与运动。
+    </p>
+    {% endif %}
+  </section>
+
+  <div class="hl-grid hl-grid-2">
+    <section class="pg-card hl-sleep">
+      <div class="pg-card-head">
+        <h2>昨夜睡眠</h2>
+        <span class="pg-card-note">
+          {%- if today.sleep.has_data %}近 7 夜平均 {{ today.sleep.average_hours }} 小时{% else %}还没有记录{% endif -%}
+        </span>
+      </div>
+      {% if today.sleep.has_data %}
+      <div class="hl-sleep-hero">
+        <span class="hl-sleep-num">{{ today.sleep.last_hours }}</span>
+        <span class="hl-sleep-unit">小时</span>
+        {% if today.sleep.bedtime %}
+        <span class="hl-sleep-when">
+          {{ time_hm(today.sleep.bedtime) }} 入睡 <span class="pg-dot">→</span> {{ time_hm(today.sleep.wake) }} 起床
+        </span>
+        {% endif %}
+      </div>
+      {% if today.sleep.regularity_minutes is not none %}
+      <p class="hl-sleep-meta">作息规律性:睡眠中点前后约 ±{{ today.sleep.regularity_minutes }} 分钟
+        <span class="pg-muted">(越小越规律)</span></p>
+      {% endif %}
+      <div class="hl-bars-mini" aria-label="最近两周睡眠">
+        {% for point in today.sleep.points %}
+        <span class="hl-bar-mini" style="height:{{ ((point.hours / 12 * 100) | round(0)) }}%"
+              title="{{ point.day[5:] }} {{ point.hours }} 小时"></span>
+        {% endfor %}
+      </div>
+      <p class="pg-card-foot">
+        {% if today.sleep.bedtime %}
+        睡眠来自「健康」里的睡眠记录;跨午夜归到起床那天。
+        {% else %}
+        快捷指令只推了睡眠时长,没有入睡/起床时间 —— 所以这里不编一个时间。
+        {% endif %}
+      </p>
+      {% else %}
+      <div class="pg-empty small">
+        <span class="pg-empty-mark">🌙</span>
+        <span class="pg-empty-title">还没有睡眠记录</span>
+        <span class="pg-empty-sub">
+          没有手表时,iPhone 只有在用了「睡眠定时」(或第三方 App 写入)时才有睡眠记录;
+          侧躺充电不会自动测。可以先手工记在「记体重」旁,或等设备写入。
+        </span>
+      </div>
+      {% endif %}
+    </section>
+
+    <section class="pg-card hl-workouts">
+      <div class="pg-card-head">
+        <h2>今天的运动</h2>
+        <span class="pg-card-note">
+          {%- if week_count %}近 7 天 {{ week_count }} 次 · {{ week_minutes }} 分钟
+          {%- if week_untimed %}(另 {{ week_untimed }} 次未记时长){% endif %}
+          {%- else %}还没有{% endif -%}
+        </span>
+      </div>
+      {% if today.workouts %}
+      <div class="hl-workout-list">
+        {% for w in today.workouts %}
+        <div class="hl-workout">
+          <span class="hl-workout-icon">
+            {%- if '跑' in w.kind %}🏃{% elif '走' in w.kind or '散步' in w.kind %}🚶
+            {%- elif '骑' in w.kind %}🚴{% elif '泳' in w.kind %}🏊
+            {%- elif '球' in w.kind %}🏀{% elif '瑜伽' in w.kind %}🧘
+            {%- elif '力量' in w.kind or '哑铃' in w.kind %}🏋️{% else %}💪{% endif -%}
+          </span>
+          <div class="hl-workout-main">
+            <span class="hl-workout-name">{{ w.kind }}</span>
+            <span class="hl-workout-meta">
+              {{ time_hm(w.ts) }}
+              {# ⭐ D188:第二个维度放进副行,右侧大字留给"主要的那个量" #}
+              {% if w.duration_min and w.reps %}<span class="pg-dot">·</span>{{ w.reps }} 个{% endif %}
+              {% if w.duration_min and w.distance_km is not none %}<span class="pg-dot">·</span>{{ w.distance_text }} 公里{% endif %}
+              {% if w.kcal %}<span class="pg-dot">·</span>约 {{ w.kcal | round | int }} 千卡{% endif %}
+              {% if w.source and w.source != 'user' %}<span class="pg-dot">·</span>手机同步{% endif %}
+            </span>
+          </div>
+          {# 没记时长就显示个数/距离 —— 绝不写「None 分钟」,也不替它补一个时长 #}
+          {% if w.duration_min %}
+          <span class="hl-workout-min">{{ w.duration_min }}<i>分钟</i></span>
+          {% elif w.reps %}
+          <span class="hl-workout-min">{{ w.reps }}<i>个</i></span>
+          {% elif w.distance_km is not none %}
+          <span class="hl-workout-min">{{ w.distance_text }}<i>公里</i></span>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="pg-empty small">
+        <span class="pg-empty-mark">🏃</span>
+        <span class="pg-empty-title">今天还没有运动记录</span>
+        <span class="pg-empty-sub">iPhone 会自己记「户外步行/跑步」(带手机就行);也可以点右上角手工记。</span>
+      </div>
+      {% endif %}
+    </section>
+  </div>
+
+  <div class="hl-grid hl-grid-2">
+    {# 体重:保留原来的大数字 + 平滑曲线(它是"最近 90 天"的形状,不是今天一天) #}
+    <section class="pg-card hl-weight">
+      <div class="pg-card-head">
+        <h2>当前体重</h2>
+        <span class="pg-card-note">最近 {{ weight_days }} 天有记录 · 平滑后</span>
+      </div>
+      {% if weight_now is not none %}
+      <div class="hl-weight-row">
+        <div class="hl-weight-main">
+          <div class="hl-value">{{ weight_now }}<span class="hl-unit">kg</span></div>
+          {% if weight_delta is not none %}
+          <div class="hl-delta {{ 'down' if weight_delta < 0 else ('up' if weight_delta > 0 else 'flat') }}">
+            {{ '↓' if weight_delta < 0 else ('↑' if weight_delta > 0 else '→') }}
+            {{ weight_delta | abs }} kg
+            <span class="hl-delta-note">比 {{ weight_prev_day[5:] }} 的 {{ weight_prev }} kg</span>
+          </div>
+          {% endif %}
+        </div>
+        {% if sparkline %}
+        <svg class="hl-spark small" viewBox="0 0 100 30" preserveAspectRatio="none" role="img"
+             aria-label="体重趋势曲线">
+          <defs>
+            <linearGradient id="hl-spark-fill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="var(--accent)" stop-opacity="0.28"/>
+              <stop offset="100%" stop-color="var(--accent)" stop-opacity="0"/>
+            </linearGradient>
+          </defs>
+          <polygon points="{{ sparkline }} 100,30 0,30" fill="url(#hl-spark-fill)"/>
+          <polyline points="{{ sparkline }}" class="hl-line"/>
+        </svg>
+        {% endif %}
+      </div>
+      <p class="hl-meta">
+        最低 {{ weight_min }} · 最高 {{ weight_max }}
+        <span class="pg-dot">·</span>曲线有约 {{ trend.trend_lag_days }} 天滞后
+      </p>
+      {% else %}
+      <div class="pg-empty small">
+        <span class="pg-empty-mark">⚖️</span>
+        <span class="pg-empty-title">还没有体重记录</span>
+        <span class="pg-empty-sub">智能秤会写进「健康」;没有秤就点右上角「记体重」,或者对助手说「今天 72.5」。</span>
+      </div>
+      {% endif %}
+    </section>
+
+    <section class="pg-card hl-latest">
+      <div class="pg-card-head">
+        <h2>最新读数</h2>
+        <span class="pg-card-note">来自手机 / 手工</span>
+      </div>
+      {% if today.latest %}
+      <div class="hl-metrics">
+        {% for item in today.latest %}
+        <div class="hl-metric">
+          <span>{{ item.name }}</span>
+          <b>{{ item.text if item.text is defined else item.value }}<i>{{ item.unit }}</i></b>
+          {% if item.delta is not none %}
+          <em class="{{ 'down' if item.delta < 0 else ('up' if item.delta > 0 else '') }}">
+            {{ '↓' if item.delta < 0 else ('↑' if item.delta > 0 else '→') }}{{ item.delta | abs }}
+          </em>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="pg-empty small">
+        <span class="pg-empty-mark">📈</span>
+        <span class="pg-empty-title">还没有读数</span>
+        <span class="pg-empty-sub">体脂/静息心率/HRV/最大摄氧量 这些需要设备写入;血压可以手工记。</span>
+      </div>
+      {% endif %}
+    </section>
+  </div>
+
+{% elif tab == 'trend' %}
+  {# ---------------------------------------------------------------- 趋势
+     一个指标一条线。指标来源是字典(app_metric_types),有数据的排前面。 #}
+  <div class="hl-chips">
+    {% for item in metric_options %}
+    <a class="hl-chip {{ 'on' if item.code == metric else '' }} {{ 'empty' if not item.has_data else '' }}"
+       href="/health?tab=trend&metric={{ item.code }}&days={{ days }}">
+      {{ item.name }}{% if not item.has_data %}<span class="pg-muted"> · 无</span>{% endif %}
+    </a>
+    {% endfor %}
+  </div>
+
+  <section class="pg-card hl-trend">
+    <div class="pg-card-head">
+      <h2>{{ series.name if series else '趋势' }}</h2>
+      <div class="hl-range">
+        {% for span in (7, 30, 90, 180) %}
+        <a class="{{ 'on' if days == span else '' }}"
+           href="/health?tab=trend&metric={{ metric }}&days={{ span }}">{{ span }}天</a>
+        {% endfor %}
+      </div>
+    </div>
+
+    {% if series and series.has_data %}
+    <div class="hl-trend-hero">
+      <span class="hl-trend-num">{{ series.latest_text }}</span>
+      <span class="hl-trend-unit">{{ series.unit }}</span>
+      {% if series.change is not none %}
+      <span class="hl-trend-change {{ 'down' if series.change < 0 else ('up' if series.change > 0 else '') }}">
+        {{ '↓' if series.change < 0 else ('↑' if series.change > 0 else '→') }}
+        {{ series.change_text }}{{ series.unit }}
+      </span>
+      {% endif %}
+      <span class="hl-trend-note">最近一次 · {{ series.points[-1].day[5:] }}</span>
+    </div>
+
+    <div class="hl-chart-wrap">
+      <svg class="hl-chart-svg" viewBox="0 0 100 34" preserveAspectRatio="none" role="img"
+           aria-label="{{ series.name }}趋势">
+        <defs>
+          <linearGradient id="hl-trend-fill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="var(--accent)" stop-opacity="0.22"/>
+            <stop offset="100%" stop-color="var(--accent)" stop-opacity="0"/>
+          </linearGradient>
+        </defs>
+        {% if chart and not chart.single %}
+        <polygon points="{{ chart.area }}" fill="url(#hl-trend-fill)"/>
+        <polyline points="{{ chart.line }}" class="hl-trend-line"/>
+        {% endif %}
+        {% if moving_line %}
+        <polyline points="{{ moving_line }}" class="hl-trend-avg"/>
+        {% endif %}
+        {% if chart %}
+        <circle cx="{{ chart.dot[0] }}" cy="{{ chart.dot[1] }}" r="1.3" class="hl-trend-dot"/>
+        {% endif %}
+      </svg>
+      <div class="hl-axis">
+        <span>{{ series.points[0].day[5:] }}</span>
+        <span class="hl-axis-note">日值 + 7 日平均(虚线)</span>
+        <span>{{ series.points[-1].day[5:] }}</span>
+      </div>
+    </div>
+
+    <div class="hl-stat-row">
+      <div class="hl-stat"><span>最新</span><b>{{ series.latest_text }}</b></div>
+      <div class="hl-stat"><span>平均</span><b>{{ series.average_text }}</b></div>
+      <div class="hl-stat"><span>最低</span><b>{{ series.minimum_text }}</b></div>
+      <div class="hl-stat"><span>最高</span><b>{{ series.maximum_text }}</b></div>
+      <div class="hl-stat"><span>有数据</span><b>{{ series.count }}<i>天</i></b></div>
+    </div>
+    <p class="pg-card-foot">
+      这一条只来自你自己的记录,单位 {{ series.unit }}。
+      {% if series.count < 3 %}点太少,先别急着看趋势 —— 至少三天才有点形状。{% endif %}
+    </p>
+    {% else %}
+    <div class="pg-empty">
+      <span class="pg-empty-mark">📉</span>
+      <span class="pg-empty-title">这个指标还没有数据</span>
+      <span class="pg-empty-sub">
+        换一个指标看看,或者去「同步」把手机里的数据接进来。
+      </span>
+      <a class="pg-btn ghost small" href="/health?tab=sync" style="margin-top:10px">去同步</a>
+    </div>
+    {% endif %}
+  </section>
+
+{% elif tab == 'energy' %}
+  {# ---------------------------------------------------------------- 能量 #}
+  <section class="pg-card hl-energy">
+    <div class="pg-card-head">
+      <h2>能量收支</h2>
+      <span class="pg-card-note">最近 {{ energy_daily.days if energy_daily else 7 }} 天 · 平均每天</span>
+    </div>
+    {% if energy.missing %}
+    <div class="pg-empty">
+      <span class="pg-empty-mark">📋</span>
+      <span class="pg-empty-title">还差几项资料</span>
+      <span class="pg-empty-sub">{{ energy.missing }}</span>
+    </div>
+    {% else %}
+    <div class="hl-energy-hero">
+      <span class="hl-energy-num">{{ energy_daily.deficit }}</span>
+      <span class="hl-energy-unit">千卡<span class="pg-dot">·</span>每天缺口</span>
+      <span class="hl-energy-range">区间 {{ energy_daily.low }} ~ {{ energy_daily.high }}</span>
+    </div>
+
+    {% set burned = energy_daily.tdee + energy_daily.burn %}
+    <div class="hl-bars">
+      <div class="hl-bar-row">
+        <span class="hl-bar-label">摄入</span>
+        <span class="hl-bar"><span class="hl-bar-fill intake" style="width:{{ (energy_daily.intake / (burned or 1) * 100)|round(1) }}%"></span></span>
+        <span class="hl-bar-value">{{ energy_daily.intake }}</span>
+      </div>
+      <div class="hl-bar-row">
+        <span class="hl-bar-label">消耗</span>
+        <span class="hl-bar"><span class="hl-bar-fill burn" style="width:{{ (burned / (burned or 1) * 100)|round(1) }}%"></span></span>
+        <span class="hl-bar-value">{{ burned }}</span>
+      </div>
+    </div>
+
+    <div class="hl-metrics">
+      <div class="hl-metric"><span>基础代谢 BMR</span><b>{{ energy.bmr }}<i>千卡</i></b></div>
+      <div class="hl-metric"><span>日常消耗 TDEE({{ energy.activity_label }})</span><b>{{ energy_daily.tdee }}<i>千卡</i></b></div>
+      <div class="hl-metric"><span>摄入</span><b>{{ energy_daily.intake }}<i>千卡</i></b></div>
+      <div class="hl-metric"><span>运动消耗</span><b>{{ energy_daily.burn }}<i>千卡</i></b></div>
+    </div>
+    {% if energy.intake_logs == 0 %}
+    <p class="hl-warn-line">
+      这段窗口里<b>没有进食记录</b> —— 上面的缺口等于全部消耗,不具参考意义。
+      先记几天吃的(对助手说「中午吃了…」也行),这个数才会变成真的收支。
+    </p>
+    {% elif weekly_kg and weekly_kg > 0 %}
+    <p class="hl-insight">按这个缺口,一周大约少 <b>{{ weekly_kg }}</b> kg(7700 千卡 ≈ 1 kg 脂肪)</p>
+    {% endif %}
+    <p class="pg-card-foot">{{ energy.note }}</p>
+    {% endif %}
+
+    {% if history.available %}
+    <p class="hl-history">用你自己的历史反推:TDEE ≈ <b>{{ history.estimated_tdee }}</b> 千卡
+      <span class="pg-muted">({{ history.days }} 天数据,比公式准)</span></p>
+    {% else %}
+    <p class="hl-history pg-muted">历史反推:{{ history.reason }}</p>
+    {% endif %}
+
+    <details class="about">
+      <summary>这些数字有多准</summary>
+      <div class="about-body">
+        <p>{{ energy.disclaimer }}</p>
+        <p>运动消耗优先用手机/手表算的那一份;手工记的运动才按 MET × 体重估算。</p>
+      </div>
+    </details>
+  </section>
+
+  <section class="pg-card hl-recent">
+    <div class="pg-card-head">
+      <h2>最近的运动</h2>
+      <span class="pg-card-note">{% if week_count %}近 7 天 {{ week_count }} 次 · {{ week_minutes }} 分钟{% if week_untimed %}(另 {{ week_untimed }} 次未记时长){% endif %}{% else %}{{ workouts|length }} 条{% endif %}</span>
+    </div>
+    {% if workouts %}
+    <div class="hl-workout-list">
+      {# 进度条只拿"有时长"的那些比 —— 分母由路由算好(peak_minutes),模板不算 #}
+      {% for w in workouts %}
+      <div class="hl-workout">
+        <span class="hl-workout-icon">
+          {%- if '跑' in w.kind %}🏃{% elif '走' in w.kind or '散步' in w.kind %}🚶
+          {%- elif '骑' in w.kind %}🚴{% elif '泳' in w.kind %}🏊
+          {%- elif '球' in w.kind %}🏀{% elif '瑜伽' in w.kind %}🧘
+          {%- elif '力量' in w.kind or '哑铃' in w.kind %}🏋️{% else %}💪{% endif -%}
+        </span>
+        <div class="hl-workout-main">
+          <span class="hl-workout-name">{{ w.kind }}</span>
+          <span class="hl-workout-meta">
+            {{ w.ts[:16] | replace('T', ' ') }}
+            {% if w.duration_min and w.reps %}<span class="pg-dot">·</span>{{ w.reps }} 个{% endif %}
+            {% if w.duration_min and w.distance_km is not none %}<span class="pg-dot">·</span>{{ w.distance_text }} 公里{% endif %}
+            {% if w.kcal %}<span class="pg-dot">·</span>约 {{ w.kcal | round | int }} 千卡{% endif %}
+            {% if w.source and w.source != 'user' %}<span class="pg-dot">·</span>手机同步{% endif %}
+          </span>
+          {% if w.duration_min %}
+          <span class="hl-workout-bar"><span style="width:{{ (w.duration_min / peak_minutes * 100)|round(1) }}%"></span></span>
+          {% endif %}
+        </div>
+        {% if w.duration_min %}
+        <span class="hl-workout-min">{{ w.duration_min }}<i>分钟</i></span>
+        {% elif w.reps %}
+        <span class="hl-workout-min">{{ w.reps }}<i>个</i></span>
+        {% elif w.distance_km is not none %}
+        <span class="hl-workout-min">{{ w.distance_text }}<i>公里</i></span>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="pg-empty">
+      <span class="pg-empty-mark">🏃</span>
+      <span class="pg-empty-title">还没有运动记录</span>
+      <span class="pg-empty-sub">点右上角「记运动」,或者对助手说「今天跑步 30 分钟」「做了 10 个仰卧起坐」;手机同步过来的运动也会出现在这里。</span>
+    </div>
+    {% endif %}
+  </section>
+
+{% elif tab == 'sync' %}
+  {# ---------------------------------------------------------------- 同步
+     ⚠️ HealthKit 没有服务端 API:数据只能是手机推过来,或者用户上传导出的 zip。
+     这一页把"两条路"都摊开,并把口令、端点、上次同步、覆盖域都摆出来。 #}
+  <section class="pg-card hl-sync-hero">
+    <div class="pg-card-head">
+      <h2>从 iPhone 健康同步</h2>
+      <span class="pg-card-note">
+        {% if today.device.has_data %}已接入 · {{ today.device.rows }} 条设备记录{% else %}还没接入{% endif %}
+      </span>
+    </div>
+    <div class="hl-sync-facts">
+      <div class="hl-sync-fact">
+        <span>数据在手机上</span>
+        <b>苹果不提供云端 API</b>
+        <em>服务器不能自己去拉 —— 只能是手机推,或者你上传导出文件。</em>
+      </div>
+      <div class="hl-sync-fact">
+        <span>没有手表也能有</span>
+        <b>步数 · 距离 · 爬楼 · 活动能量 · 锻炼 · 站立</b>
+        <em>这些 iPhone 自己就记。心率/血氧/HRV/睡眠分期需要手表或设备写入。</em>
+      </div>
+      <div class="hl-sync-fact">
+        <span>上次同步</span>
+        <b>
+          {%- if sync_context.syncs %}{{ sync_context.syncs[0].ts[:16] | replace('T', ' ') }}{% else %}还没有{% endif -%}
+        </b>
+        <em>{% if sync_context.syncs %}{{ sync_context.syncs[0]['source'] }} · {{ sync_context.syncs[0]['items'] }} 条{% else %}先选下面任意一种方式{% endif %}</em>
+      </div>
+    </div>
+  </section>
+
+  <div class="hl-grid hl-grid-2">
+    <section class="pg-card hl-sync-setup">
+      <div class="pg-card-head">
+        <h2>① 口令与地址</h2>
+        <span class="pg-card-note">写入口</span>
+      </div>
+      {% if sync_context.token %}
+      <label class="hl-field">
+        <span>端点(手机 POST 到这里)</span>
+        <input type="text" readonly value="{{ sync_context.endpoint }}" id="hl-endpoint">
+      </label>
+      <label class="hl-field">
+        <span>口令(放 Authorization: Bearer 后面)</span>
+        <input type="text" readonly value="{{ sync_context.token }}" id="hl-token">
+      </label>
+      <div class="hl-btn-row">
+        <button class="pg-btn small" type="button" data-copy="hl-endpoint">复制地址</button>
+        <button class="pg-btn small" type="button" data-copy="hl-token">复制口令</button>
+        <form method="post" action="/health/sync/token" style="display:inline">
+          <input type="hidden" name="_idem" value="{{ idem() }}">
+          <button class="pg-btn ghost small" type="submit">重置口令</button>
+        </form>
+      </div>
+      {% if sync_context.loopback %}
+      <p class="hl-warn-line">
+        ⚠️ 这个地址只有本机能连。手机要推数据,得让服务监听局域网/公网,
+        并在 .env 里设 <b>LA_HEALTH_PUBLIC_BASE</b>(或沿用 LA_CALENDAR_PUBLIC_BASE 的同一入口),
+        同时让 nginx 放行 <b>/api/health/sync</b>。
+      </p>
+      {% endif %}
+      <p class="pg-card-foot">
+        口令只认请求头,不认 URL 参数 —— URL 会进反代日志,等于把写权限写进日志。
+        重置后旧口令立即失效;手机那边要同步改一次。
+      </p>
+      <details class="about">
+        <summary>手机一直推不上来?</summary>
+        <div class="about-body">
+          <p>① 用<b>手机浏览器</b>打开 <b>{{ sync_context.endpoint }}</b>:回「口令不对」是 403,
+             说明地址通了;超时 / 444 / 502 说明公网还没放行。</p>
+          <p>② 快捷指令里「获取 URL 内容」要选 <b>POST</b>,请求头带
+             <b>Authorization: Bearer 口令</b>;正文是 JSON。</p>
+          <p>③ 公网入口还要求 nginx 放行 <b>/api/health/sync</b>(只放行 /calendar/ics 不够),
+             做法见 docs/苹果健康接入方案.md §5。</p>
+          <p>④ 推完回这一页看「上次同步」—— 它能证明报文真的落库了。</p>
+        </div>
+      </details>
+      {% else %}
+      <div class="pg-empty small">
+        <span class="pg-empty-mark">🔑</span>
+        <span class="pg-empty-title">还没有同步口令</span>
+        <span class="pg-empty-sub">生成一条,再把它填进快捷指令。口令可以随时重置。</span>
+      </div>
+      <form method="post" action="/health/sync/token" style="margin-top:12px">
+        <input type="hidden" name="_idem" value="{{ idem() }}">
+        <button class="pg-btn primary wide" type="submit">生成同步口令</button>
+      </form>
+      {% endif %}
+    </section>
+
+    <section class="pg-card hl-sync-upload">
+      <div class="pg-card-head">
+        <h2>② 一次性导入(补历史)</h2>
+        <span class="pg-card-note">export.zip / export.xml</span>
+      </div>
+      <ol class="hl-steps">
+        <li>iPhone「健康」→ 右上角头像 → 最下面「导出所有健康数据」;</li>
+        <li>把生成的 <b>导出.zip</b> 传到电脑(隔空投送 / 文件 App / 微信文件传输);</li>
+        <li>在下面选中它 —— 服务器会流式解析,几百 MB 也可以。</li>
+      </ol>
+      <form method="post" action="/health/import" enctype="multipart/form-data" class="hl-upload-form">
+        <input type="hidden" name="_idem" value="{{ idem() }}">
+        <input type="file" name="file" accept=".zip,.xml" required
+               style="font:inherit;font-size:13px;padding:10px;border:1px dashed var(--card-line);border-radius:12px;width:100%">
+        <button class="pg-btn primary wide" type="submit">导入这份文件</button>
+      </form>
+      <p class="pg-card-foot">
+        导入只认白名单指标,未知类型跳过并报数;重复导入不会变成两份(逐条 upsert)。
+        撤销:如果这是一次新导入,回执卡上能一键删掉这次新进的那些行。
+      </p>
+    </section>
+  </div>
+
+  <section class="pg-card hl-sync-recipe">
+    <div class="pg-card-head">
+      <h2>③ 每天自动推(快捷指令)</h2>
+      <span class="pg-card-note">推荐 · 不用装别的 App</span>
+    </div>
+    <ol class="hl-steps">
+      <li>「快捷指令」→ 新建 → 添加动作「<b>查找健康样本</b>」:类型「步数」,筛选「开始日期是今天」。</li>
+      <li>点「显示更多」,把<b>「限制」关掉</b> —— 不关的话默认只统计前 10 条样本,步数会少算。</li>
+      <li>加「<b>计算统计</b>」:对样本求「总和」;再用「<b>设定变量</b>」存成「步数」。</li>
+      <li>同样做「<b>活动能量</b>」「<b>锻炼时间</b>」;没有手表时锻炼时间可能为空,可以跳过。</li>
+      <li>加「<b>获取 URL 内容</b>」:URL 填上面的端点,方法 <b>POST</b>,请求体选 <b>JSON</b>,
+          加三个字段 <b>steps</b> / <b>active_kcal</b> / <b>exercise_min</b>,值分别插入上面的变量。</li>
+    </ol>
+    <pre class="hl-pre">{{ sync_context.example | tojson(indent=2) }}</pre>
+    <ul class="hl-plain">
+      <li>请求头加 <b>Authorization</b> = <b>Bearer 你的口令</b>(Content-Type 选 JSON 后会自动带上);</li>
+      <li><b>不用填日期</b> —— 不写 date 就是今天(服务端按上海时区),所以早上 8 点推没问题;</li>
+      <li>想每天自动跑:「快捷指令」→「自动化」→「个人自动化」→「时间」→ 每天早上 8 点 → 关闭「运行前询问」。</li>
+    </ul>
+    <p class="pg-card-foot">
+      同一天重复推是覆盖,不是追加 —— 一天推几次都行。没有的指标不要填(不是 0);
+      推送成功后这里会显示「上次同步」。
+    </p>
+  </section>
+
+  <section class="pg-card hl-coverage">
+    <div class="pg-card-head">
+      <h2>数据覆盖</h2>
+      <span class="pg-card-note">共 {{ sync_context.coverage.total if sync_context.coverage else 0 }} 条 ·
+        {{ sync_context.coverage.workouts if sync_context.coverage else 0 }} 次运动</span>
+    </div>
+    {% if sync_context.coverage and sync_context.coverage.metrics %}
+    <div class="hl-table">
+      <div class="hl-tr hl-th">
+        <span>指标</span><span>条数</span><span>最早</span><span>最晚</span>
+      </div>
+      {% for item in sync_context.coverage.metrics %}
+      <div class="hl-tr">
+        <span>{{ item.name }}</span>
+        <span>{{ item.count }}</span>
+        <span>{{ item.first[5:] }}</span>
+        <span>{{ item.last[5:] }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="pg-empty small">
+      <span class="pg-empty-mark">🗂️</span>
+      <span class="pg-empty-title">还没有任何数据</span>
+      <span class="pg-empty-sub">导入一份历史,或者每天让快捷指令推一次。</span>
+    </div>
+    {% endif %}
+
+    {% if sync_context.syncs %}
+    <h3 class="hl-subhead">最近的同步</h3>
+    <div class="hl-sync-log">
+      {% for item in sync_context.syncs %}
+      <div class="hl-sync-item">
+        <span>{{ item.ts[:16] | replace('T', ' ') }}</span>
+        <span class="tag">{{ item.source }}</span>
+        <span class="pg-muted">{{ item['items'] }} 条 · {{ item['days'] }} 天</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </section>
+
+  <details class="about">
+    <summary>隐私:这些数据会离开手机吗</summary>
+    <div class="about-body">
+      <p>数据存在这台服务器(或你自己的电脑)上,和账本、错题同一个库。同步走的是你自己的地址 + 一次性口令;
+        口令只放在请求头里,重置后旧口令立即失效。</p>
+      <p>和助手对话时,只有它读到的那部分会发给模型 —— 这一页的读取路径完全不经过模型。</p>
+    </div>
+  </details>
+{% endif %}
+
+</div>
+
+{# 两个记录入口都是原生 dialog:点按钮直接弹,没有 JS 时链接 ?compose= 也能展开 #}
+<dialog class="pg-dialog" id="hl-weight" data-open="{{ '1' if compose == 'weight' else '' }}">
+  <form method="post" action="/health/weight" class="pg-form">
+    <input type="hidden" name="_idem" value="{{ idem() }}">
+    <header class="pg-dialog-head">
+      <h2>记体重</h2>
+      <a class="pg-dialog-close" href="/health?tab={{ tab }}" aria-label="关闭">×</a>
+    </header>
+    <label class="pg-amount">
+      <input name="value" type="number" step="0.1" min="20" max="300" placeholder="72.5"
+             required inputmode="decimal" autocomplete="off">
+      <span>kg</span>
+    </label>
+    <p class="pg-hint">一天称几次都行,按天取平均再进趋势线。</p>
+    <footer class="pg-dialog-foot"><button class="pg-btn primary wide">记下来</button></footer>
+  </form>
+</dialog>
+
+<dialog class="pg-dialog" id="hl-workout" data-open="{{ '1' if compose == 'workout' else '' }}">
+  <form method="post" action="/health/workout" class="pg-form">
+    <input type="hidden" name="_idem" value="{{ idem() }}">
+    <header class="pg-dialog-head">
+      <h2>记运动</h2>
+      <a class="pg-dialog-close" href="/health?tab={{ tab }}" aria-label="关闭">×</a>
+    </header>
+    <div class="pg-form-grid">
+      <label class="pg-field wide">
+        <span>项目</span>
+        <input type="text" name="activity" placeholder="跑步 / 快走 / 游泳 / 仰卧起坐" required autocomplete="off">
+      </label>
+      <label class="pg-field">
+        <span>时长(分钟)</span>
+        {# ⚠️ 不预填 30:预填会让「10 个仰卧起坐」顺手多记一个 30 分钟(这不是估算,是假数据) #}
+        <input type="number" name="minutes" min="1" max="1440" placeholder="30" inputmode="numeric">
+      </label>
+      <label class="pg-field">
+        <span>距离(公里)</span>
+        <input type="number" name="distance_km" min="0" max="1000" step="0.1" placeholder="5.2" inputmode="decimal">
+      </label>
+      <label class="pg-field">
+        <span>个数</span>
+        <input type="number" name="reps" min="1" max="5000" placeholder="10" inputmode="numeric">
+      </label>
+    </div>
+    <p class="pg-hint">时长 / 距离 / 个数至少填一个 —— 填哪个记哪个,不估算;没有时长的这次不算消耗。</p>
+    <footer class="pg-dialog-foot"><button class="pg-btn primary wide">记下来</button></footer>
+  </form>
+</dialog>
+
+<script>
+(function () {
+  function wire(dialogId, triggerId) {
+    var dlg = document.getElementById(dialogId);
+    var trigger = document.getElementById(triggerId);
+    if (!dlg || typeof dlg.showModal !== 'function') return;
+    if (dlg.hasAttribute('open')) dlg.close();
+    function open() {
+      if (!dlg.open) dlg.showModal();
+      var field = dlg.querySelector('input');
+      if (field) field.focus();
+    }
+    if (trigger) {
+      trigger.addEventListener('click', function (event) {
+        event.preventDefault();
+        open();
+      });
+    }
+    if (dlg.getAttribute('data-open')) open();
+    dlg.addEventListener('click', function (event) {
+      if (event.target === dlg) dlg.close();
+    });
+  }
+  wire('hl-weight', 'hl-weight-open');
+  wire('hl-workout', 'hl-workout-open');
+
+  // 复制按钮:拿不到 clipboard(非 https / 老浏览器)就把文字选中,不给假反馈。
+  document.querySelectorAll('[data-copy]').forEach(function (button) {
+    button.addEventListener('click', function () {
+      var field = document.getElementById(button.getAttribute('data-copy'));
+      if (!field) return;
+      var text = field.value || '';
+      function done() {
+        var old = button.textContent;
+        button.textContent = '已复制';
+        setTimeout(function () { button.textContent = old; }, 1600);
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, function () { field.select(); });
+      } else {
+        field.select();
+        try { document.execCommand('copy'); done(); } catch (e) { /* 手动复制 */ }
+      }
+    });
+  });
+})();
+</script>
+{% endblock %}

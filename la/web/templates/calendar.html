@@ -1,0 +1,699 @@
+{% extends "base.html" %}
+{% block title %}日历 · 默{% endblock %}
+
+{# 一行提醒的写法(D117):「该响的提醒」与折叠里的「已响过 / 已关闭」共用这一份 ——
+   同一行在两处各写一遍,迟早会改一处忘一处。 #}
+{% macro reminder_row(r) -%}
+<div class="row">
+  <span class="row-icon" aria-hidden="true">{{ '⏰' if r.is_alarm else '🔔' }}</span>
+  <span class="row-main">
+    <span class="row-title">{{ r.todo_content or r.prompt }}</span>
+    <span class="row-sub">
+      {{ r.rule }}{% if r.when_text %} · {{ r.when_text }}{% endif %}
+      {%- if r.is_alarm %} · 待办的闹钟{% endif %}
+      {%- if r.todo_missing %} · ⚠️ 它挂的待办已经不在了{% endif %}
+      {%- if r.target_label and r.target_label != '全部' %} · 只提醒 {{ r.target_label }}{% endif %}
+    </span>
+  </span>
+  <span class="tag {{ 'draft' if r.state == 'late' else ('confirmed' if r.state == 'wait' else 'void') }}">{{ r.state_label }}</span>
+  {% if r.todo_id and not r.todo_done %}
+  <form method="post" action="/calendar/todos/{{ r.todo_id }}/done">
+    <input type="hidden" name="_idem" value="{{ idem() }}">
+    <input type="hidden" name="back" value="/calendar?tab=reminders">
+    <button class="ghost small" type="submit" title="勾掉这条待办(它的闹钟也跟着停)">完成</button>
+  </form>
+  {% elif r.kind == 'at' %}
+  <form method="post" action="/calendar/reminders/{{ r.id }}/adopt">
+    <input type="hidden" name="_idem" value="{{ idem() }}">
+    <button class="neutral small" type="submit"
+            title="这其实是一件要做的事 —— 补成待办,以后勾掉它,这条提醒就跟着停">转成待办</button>
+  </form>
+  {% endif %}
+  <form method="post" action="/calendar/reminders/{{ r.id }}/delete">
+    <input type="hidden" name="_idem" value="{{ idem() }}">
+    <button class="danger small" type="submit" title="删掉这条提醒(聊天页回执托盘里能撤销)">删</button>
+  </form>
+</div>
+{%- endmacro %}
+
+{% block body %}
+<div class="page{% if tab == 'month' %} wide calendar-page{% endif %}">
+
+  {% if tab == 'month' %}
+  {# ⭐ 2026-10-22 视觉重做:月历是主视图,先把"今天 / 本月有多少事"放在第一屏,
+     再把月历与右栏(今天 / iPhone 订阅)并排。全部服务端渲染,不依赖 JS。 #}
+  <section class="cal-hero">
+    <div class="cal-hero-main">
+      <p class="cal-eyebrow">{{ cal.title }} · {{ today_weekday }}</p>
+      <h1>日历</h1>
+      <p class="cal-sub">日程、待办与提醒,放在同一张时间表上。全部本地排程,不经过模型。</p>
+    </div>
+    <div class="cal-hero-side">
+      <div class="cal-today-badge" aria-label="今天 {{ today_month }}{{ today_day }} 日 {{ today_weekday }}">
+        <span class="ctb-day">{{ today_day }}</span>
+        <span class="ctb-meta"><strong>{{ today_weekday }}</strong><span>{{ today_month }}</span></span>
+      </div>
+      <div class="cal-hero-actions">
+        <a class="cal-btn primary" href="/calendar?tab=todos&amp;new=1">＋ 新建待办</a>
+        <a class="cal-btn" href="/calendar?tab=reminders&amp;new=1">＋ 新提醒</a>
+      </div>
+    </div>
+  </section>
+
+  <div class="cal-metrics" aria-label="本月概览">
+    <a class="cal-metric" href="/calendar?tab=agenda">
+      <span class="cm-mark event" aria-hidden="true"></span>
+      <span class="cm-text"><span class="cm-label">本月日程</span><span class="cm-value">{{ cal.month_items }}</span></span>
+      <span class="cm-note">{{ cal.month_days }} 天有安排</span>
+    </a>
+    <a class="cal-metric" href="/calendar?tab=todos">
+      <span class="cm-mark todo" aria-hidden="true"></span>
+      <span class="cm-text"><span class="cm-label">未完成待办</span><span class="cm-value">{{ counts.todos }}</span></span>
+      <span class="cm-note">{% if cal.todo_items %}本月 {{ cal.todo_items }} 条在日历上{% else %}点这里看全部{% endif %}</span>
+    </a>
+    <a class="cal-metric" href="/calendar?tab=reminders">
+      <span class="cm-mark bell" aria-hidden="true"></span>
+      <span class="cm-text"><span class="cm-label">该响的提醒</span><span class="cm-value">{{ counts.reminders }}</span></span>
+      <span class="cm-note">到点会推到微信</span>
+    </a>
+  </div>
+  {% else %}
+  <div class="page-head">
+    <div class="head-main">
+      <h1>日历</h1>
+      <p class="sub">月历、日程、提醒与待办 —— 全部本地排程,不经过模型。</p>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if ok %}<div class="ok" style="margin-bottom:14px">{{ ok }}</div>{% endif %}
+  {% if err %}<div class="warn" style="margin-bottom:14px">{{ err }}</div>{% endif %}
+
+  {# ---------------------------------------------------------- 页签(D112)
+     ⭐ 用户 2026-10-13:"日历页要优化显示,另外提醒和待办都应该放在这里,
+        可以用页标签切换的形式"。与错题页(D111)同一套做法:
+        **服务端只渲染当前那一页**,页签带计数,纯链接不需要 JS ——
+        刷新、分享、手机后退、聊天里发过来的链接,每一条都得能用。 #}
+  <div class="segmented tabs" role="tablist">
+    <a role="tab" aria-selected="{{ 'true' if tab == 'month' else 'false' }}"
+       href="/calendar?tab=month" class="{{ 'on' if tab == 'month' else '' }}">
+      月历{% if counts.month %}<span class="count">{{ counts.month }}</span>{% endif %}
+    </a>
+    <a role="tab" aria-selected="{{ 'true' if tab == 'agenda' else 'false' }}"
+       href="/calendar?tab=agenda&days={{ days }}" class="{{ 'on' if tab == 'agenda' else '' }}">
+      日程{% if counts.agenda %}<span class="count">{{ counts.agenda }}</span>{% endif %}
+    </a>
+    <a role="tab" aria-selected="{{ 'true' if tab == 'reminders' else 'false' }}"
+       href="/calendar?tab=reminders" class="{{ 'on' if tab == 'reminders' else '' }}">
+      提醒{% if counts.reminders %}<span class="count">{{ counts.reminders }}</span>{% endif %}
+    </a>
+    <a role="tab" aria-selected="{{ 'true' if tab == 'todos' else 'false' }}"
+       href="/calendar?tab=todos" class="{{ 'on' if tab == 'todos' else '' }}">
+      待办{% if counts.todos %}<span class="count">{{ counts.todos }}</span>{% endif %}
+    </a>
+  </div>
+
+  {% if tab == 'month' %}
+  {# ---------------------------------------------------------- 月历
+     页面主体,不依赖 JS。格子里每一条都指向「日程」页那一天的锚点。 #}
+  <div class="cal-layout">
+    <div class="cal-main">
+      <section class="card month-card">
+        <div class="month-head">
+          <div class="month-title">
+            <span class="mt-main">{{ cal.title }}</span>
+            <span class="mt-sub">
+              本月 {{ cal.month_items }} 条日程{% if cal.todo_items %} · {{ cal.todo_items }} 条待办{% endif %}
+              · {{ cal.month_days }} 天有安排
+            </span>
+          </div>
+          <div class="month-actions">
+            <a class="mnav-btn" href="/calendar?tab=month&month={{ cal.prev_key }}"
+               title="上个月({{ cal.prev_key }})" aria-label="上个月">‹</a>
+            <a class="mnav-btn ghost" href="/calendar?tab=month" title="回到本月">今天</a>
+            <a class="mnav-btn" href="/calendar?tab=month&month={{ cal.next_key }}"
+               title="下个月({{ cal.next_key }})" aria-label="下个月">›</a>
+          </div>
+        </div>
+
+        <div class="cal-weekdays" aria-hidden="true">
+          {% for label in cal.weekday_labels %}<span>{{ label }}</span>{% endfor %}
+        </div>
+
+        <div class="cal-grid" role="grid" aria-label="{{ cal.title }}的月历">
+          {% for row in cal.rows %}
+          {% for cell in row %}
+          {% set paint = cell.is_today and cell.in_month %}
+          {% set day_link = "/calendar?tab=agenda&month=" ~ cal.key ~ "&days=" ~ days ~ "#d-" ~ cell.key %}
+          <div class="cal-day{{ ' out' if not cell.in_month else '' }}{{ ' today' if paint else '' }}{{ ' weekend' if cell.is_weekend else '' }}{{ ' busy' if cell.count else '' }}"
+               id="d-{{ cell.key }}">
+            <div class="cd-head">
+              <span class="cd-num">{{ cell.day }}</span>
+              {% if paint %}<span class="cd-today">今天</span>{% endif %}
+              {% if cell.todo_count %}<span class="cd-todo-dot" title="{{ cell.todo_count }} 条待办"></span>{% endif %}
+              {% if cell.count > 3 %}<span class="cd-count">{{ cell.count }}</span>{% endif %}
+            </div>
+            <div class="cd-items">
+              {% for item in cell['items'] %}
+              {% if item.kind == 'todo' %}
+              <a class="cal-chip todo{{ ' overdue' if item.overdue else '' }}"
+                 href="/calendar?tab=todos#todo-{{ item.todo_id }}"
+                 title="{{ item.title }}{{ (' · 已逾期' if item.overdue else '') }}">
+                <span class="cc-check" aria-hidden="true"></span>
+                <span class="cc-title">{{ item.title }}</span>
+                {% if item.what != '待办' %}<span class="cc-time">{{ item.what }}</span>{% endif %}
+              </a>
+              {% else %}
+              <a class="cal-chip event{{ ' aday' if item.all_day else '' }}{{ ' cont' if item.continuing else '' }}"
+                 href="{{ day_link }}"
+                 title="{{ item['what'] }}{{ ('–' + item.end) if item.end else '' }} {{ item.title }}{{ (' @' + item.location) if item.location else '' }}">
+                <span class="cc-time">{{ item['what'] }}{% if item.end %}–{{ item.end }}{% endif %}</span>
+                <span class="cc-title">{{ item.mark }}{{ item.title }}</span>
+              </a>
+              {% endif %}
+              {% endfor %}
+            </div>
+            {% if cell.more %}
+            <a class="cal-more" href="{{ day_link }}"
+               title="这一天还有 {{ cell.more }} 条,点开看全部">+{{ cell.more }}</a>
+            {% endif %}
+          </div>
+          {% endfor %}
+          {% endfor %}
+        </div>
+
+        <p class="cal-foot">
+          <span aria-hidden="true">↻</span> 重复展开 · <span aria-hidden="true">✎</span> 这一次单独改过 ·
+          <strong>+N</strong> 还有几条 · 绿色圆圈是待办
+        </p>
+      </section>
+
+      {# 手机端:格子太小,把"本月日程 / 本月待办"换成可读的列表;桌面端隐藏 #}
+      <section class="card cal-mobile-list">
+        <div class="cml-head"><h2>本月日程</h2><span>{{ cal.month_items }} 条</span></div>
+        {% if month_event_rows %}
+        <div class="cml-list">
+          {% for e in month_event_rows %}
+          <a class="cml-row" href="/calendar?tab=agenda&amp;month={{ cal.key }}&amp;days={{ days }}#d-{{ e.key }}">
+            <span class="cml-date">{{ e.date_label }}</span>
+            <span class="cml-title">{{ e.title }}{% if e.location %}<small>@{{ e.location }}</small>{% endif %}</span>
+            <span class="cml-time">{{ e.time }}</span>
+          </a>
+          {% endfor %}
+        </div>
+        {% if month_event_more %}<p class="cml-more">还有 {{ month_event_more }} 条,完整排期看「日程」页。</p>{% endif %}
+        {% else %}
+        <p class="cml-empty">本月还没有日程。</p>
+        {% endif %}
+
+        <div class="cml-head"><h2>本月待办</h2><span>{{ cal.todo_items }} 条</span></div>
+        {% if month_todo_rows %}
+        <div class="cml-list">
+          {% for t in month_todo_rows %}
+          <a class="cml-row todo{{ ' overdue' if t.overdue else '' }}" href="/calendar?tab=todos#todo-{{ t.id }}">
+            <span class="cml-date">{{ t.date_label }}{% if t.at_text %} · {{ t.at_text }}{% endif %}</span>
+            <span class="cml-title">{{ t.content }}</span>
+            <span class="cml-time">{{ t.due_label }}</span>
+          </a>
+          {% endfor %}
+        </div>
+        {% if month_todo_more %}<p class="cml-more">还有 {{ month_todo_more }} 条,完整清单看「待办」页。</p>{% endif %}
+        {% else %}
+        <p class="cml-empty">本月没有未完成的待办。</p>
+        {% endif %}
+      </section>
+    </div>
+
+    <aside class="cal-rail">
+      <section class="today-panel">
+        <div class="tp-head">
+          <div class="tp-date-wrap">
+            <span class="tp-day">{{ today_day }}</span>
+            <span class="tp-meta">{{ today_month }} · {{ today_weekday }}</span>
+          </div>
+          <span class="tp-badge">今天</span>
+        </div>
+        <div class="tp-list">
+          {% if today_items %}
+            {% for item in today_items %}
+            <a class="tp-item {{ item.kind }}{{ ' overdue' if item.overdue else '' }}" href="{{ item.href }}">
+              <span class="tp-when">{{ item.when }}</span>
+              <span class="tp-body">
+                <span class="tp-title">{{ item.title }}</span>
+                {% if item.meta %}<span class="tp-sub">{{ item.meta }}</span>{% endif %}
+              </span>
+              <span class="tp-arrow" aria-hidden="true">›</span>
+            </a>
+            {% endfor %}
+            {% if today_more %}<a class="tp-more" href="/calendar?tab=agenda&days={{ days }}">还有 {{ today_more }} 条</a>{% endif %}
+          {% else %}
+            <div class="tp-empty">
+              <span class="tp-empty-title">今天没有安排。</span>
+              <span class="tp-empty-sub">留白也是一种安排。</span>
+            </div>
+          {% endif %}
+        </div>
+      </section>
+
+      <section class="card subscribe-card" id="subscribe">
+        <div class="sc-head">
+          <span class="sc-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2.5" width="10" height="19" rx="2.6"/><path d="M10.5 5h3M11 18.5h2"/></svg>
+          </span>
+          <div class="sc-title-wrap">
+            <h2>订阅到 iPhone <span class="sc-badge">自动刷新</span></h2>
+            <p>在 iPhone 自带的「日历」里订阅一份只读日历,日程和待办会跟着更新。</p>
+          </div>
+        </div>
+
+        {% if subscription.token %}
+          {% if subscription.phone_only %}
+          <p class="sc-note"><strong>手机用下面这一条(公网,不用装任何 App)</strong> —— 公网上只开了一条只读的日历订阅,别的页面打不开。</p>
+          {% endif %}
+          <div class="sc-url-row">
+            <input class="sc-url" readonly value="{{ subscription.primary_url }}" aria-label="订阅链接">
+            <button type="button" class="cal-btn sc-copy js-copy" data-copy="{{ subscription.primary_url }}">复制</button>
+          </div>
+          <div class="sc-actions">
+            <a class="cal-btn primary" href="{{ subscription.primary_webcal }}">在 iPhone 上订阅</a>
+            <a class="cal-btn ghost" href="{{ subscription.primary_download }}"
+               title="一次性导入,导入后不会自动刷新;要自动刷新请用左边的订阅">下载 .ics(一次性)</a>
+          </div>
+          <p class="sc-note"><strong>订阅链接会自动刷新</strong>;「下载 .ics」只是导入一次,导入后不会再变。</p>
+          {% if subscription.phone_only %}
+          <p class="sc-note">这一页的地址是 <code>{{ subscription.ics_url }}</code>(内网 / Tailscale 用,手机连不上)。</p>
+          {% endif %}
+          {% if subscription.loopback %}
+          <p class="sc-warn">当前地址是本机回环(127.0.0.1),iPhone 访问不到。请在云端/局域网地址打开这一页再生成。</p>
+          {% endif %}
+          {# ⚠️ 2026-10-31:iPhone 每小时都在失败,页面上却什么都看不出来 —— 用户只能问
+             "怎么好几天没更新"。这里把"手机上次来取"的实况摆出来(见 D173)。 #}
+          {% if subscription_last %}
+          <p class="sc-note">
+            上次手机来取:{{ subscription_last.ts_local }}
+            {%- if subscription_last.ua_short %}({{ subscription_last.ua_short }}){% endif %}
+            {%- if subscription_last.stale %} · <strong>已经 {{ subscription_last.age_text }}没来取了</strong>{% endif %}
+          </p>
+          {% if subscription_last.host_changed %}
+          <p class="sc-warn">
+            ⚠ 手机最后来的地址是 <code>{{ subscription_last.host }}</code>,和这一页的
+            <code>{{ subscription_last.now_host }}</code> 不一样 —— 手机上还挂着旧订阅,
+            删掉它,用上面的链接重新加一次。
+          </p>
+          {% elif subscription_last.stale %}
+          <p class="sc-warn">
+            ⚠ 已经 {{ subscription_last.age_text }}没来取过。检查手机上的订阅是否还在、
+            地址能不能连上;确认没问题的话,iOS 一般一小时左右会来取一次。
+          </p>
+          {% endif %}
+          {% endif %}
+          <details class="sc-steps">
+            <summary>iPhone 上怎么加</summary>
+            <ol>
+              <li>点上面的「在 iPhone 上订阅」,或在 iPhone 上打开这个链接。</li>
+              <li>系统会打开「日历」,点「订阅」。</li>
+              <li>也可以手动:设置 → 日历 → 账户 → 添加账户 → 其他 → 添加已订阅的日历,粘贴链接。</li>
+            </ol>
+            <p class="muted">只读:在手机上改了不会同步回来。链接泄露了,点下面重置。</p>
+            <p class="muted">如果 iPhone 提示「不安全连接」,说明订阅地址需要 HTTPS;「下载 .ics」只能作为一次性导入。</p>
+          </details>
+          <form method="post" action="/calendar/subscribe/rotate" class="sc-reset">
+            <input type="hidden" name="_idem" value="{{ idem() }}">
+            <button class="link-btn" type="submit">重置订阅链接</button>
+          </form>
+        {% else %}
+          <div class="sc-empty">
+            <p>还没有订阅链接。生成一次,就能添加到 iPhone 日历。</p>
+            <form method="post" action="/calendar/subscribe/rotate">
+              <input type="hidden" name="_idem" value="{{ idem() }}">
+              <button class="cal-btn primary" type="submit">生成订阅链接</button>
+            </form>
+          </div>
+        {% endif %}
+      </section>
+
+      <details class="card source-card">
+        <summary>
+          <span class="sc-title">日历来源</span>
+          <span class="tag">{{ events|length }} 个系列</span>
+        </summary>
+        {% if events %}
+        <div class="list sc-source-list">
+          {% for e in events %}
+          <div class="row">
+            <span class="row-main">
+              <span class="row-title">{{ e.title }}</span>
+              <span class="row-sub">{{ e.dtstart[:16] | replace('T', ' ') }}{% if e.rrule %} · {{ e.rrule }}{% endif %}</span>
+            </span>
+            <span class="tag{{ ' void' if e.status == 'cancelled' else '' }}">{{ e.status_label }}</span>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty">
+          <span class="empty-mark">📅</span>
+          <span class="empty-title">还没有日程</span>
+          <span class="empty-sub">在聊天页说一句「下周三下午三点带孩子看牙医」就会出现在这里。</span>
+        </div>
+        {% endif %}
+      </details>
+    </aside>
+  </div>
+
+  {% elif tab == 'agenda' %}
+  {# ---------------------------------------------------------- 日程明细 #}
+  <form class="bar" method="get" action="/calendar">
+    <input type="hidden" name="tab" value="agenda">
+    <div class="segmented">
+      {% for option in [7, 14, 30, 90] %}
+      <a href="/calendar?tab=agenda&days={{ option }}"
+         class="{{ 'on' if days == option else '' }}">{{ option }} 天</a>
+      {% endfor %}
+    </div>
+    <label class="muted" style="display:flex;align-items:center;gap:8px">
+      <input type="number" name="days" value="{{ days }}" min="1" max="400" style="width:92px"
+             aria-label="明细往后多少天">
+      <span>天</span>
+    </label>
+    <button type="submit" class="neutral small">刷新</button>
+  </form>
+
+  {% if truncated %}<p class="warn">结果被截断,窗口过大 —— 缩小天数再看。</p>{% endif %}
+
+  <div class="section-head">
+    <h2>接下来 {{ days }} 天</h2>
+    <span class="section-note">{{ counts.agenda }} 条日程 · 排到 {{ until_text }}</span>
+  </div>
+
+  {% if days_grouped %}
+    {% for group in days_grouped %}
+    <div class="day-group" id="d-{{ group.key }}">
+      <div class="day-label">
+        <span class="day-date">{{ cn_date(group.date) }}</span>
+        {% if group.key == today %}<span class="day-today">今天</span>{% endif %}
+        <span class="spacer"></span>
+        <span>{{ group['items']|length }} 条</span>
+      </div>
+      <section class="card">
+        <ul class="agenda">
+          {% for o in group['items'] %}
+          <li>
+            <span class="mark">{{ "✎" if o.is_override else ("↻" if o.is_recurring else "") }}</span>
+            <span class="when">
+              {%- if o.all_day %}全天
+              {%- else %}{{ o.start.strftime("%H:%M") }}{% if o.end %}–{{ o.end.strftime("%H:%M") }}{% endif %}{% endif -%}
+            </span>
+            <span class="what">
+              {{ o.title }}
+              {% if o.location %}<span class="where"> · @{{ o.location }}</span>{% endif %}
+            </span>
+          </li>
+          {% endfor %}
+        </ul>
+      </section>
+    </div>
+    {% endfor %}
+  {% else %}
+  <section class="card">
+    <div class="empty">
+      <span class="empty-mark">🗓️</span>
+      <span class="empty-title">这段时间没有日程</span>
+      <span class="empty-sub">在聊天页说一句「下周三下午三点带孩子看牙医」就行。</span>
+    </div>
+  </section>
+  {% endif %}
+
+  {% elif tab == 'reminders' %}
+  {# ---------------------------------------------------------- 提醒
+     两个来源在用户眼里是同一件事(见 la/bridge/reminder_push.py):
+     定时提醒(它答应过要提醒你的)与日程自带的提醒(事件提前 N 分钟)。
+
+     ⭐ D117:用户 2026-10-14「用户点到界面应该是看到想看的东西……像已完成的你应该
+        收缩起来。新建你应该用一个按钮,而不是展开」。所以这一页**第一屏就是清单**:
+        新建表单收进 <details>(纯 HTML,不用 JS),该响的排上面,已了结的沉进折叠。
+        数据一个字没改 —— 变的只是"谁占着第一屏"。 #}
+  <details class="new-fold"{% if form_open %} open{% endif %}>
+    <summary>
+      <span class="nf-icon" aria-hidden="true">＋</span>定一个新提醒
+      <span class="nf-hint">某个时刻 / 每天 / 每隔一会儿</span>
+    </summary>
+    <section class="card">
+      <form method="post" action="/calendar/reminders/add">
+        <input type="hidden" name="_idem" value="{{ idem() }}">
+        <div class="field">
+          <label for="rm-prompt">提醒我</label>
+          <div class="field-body">
+            <input id="rm-prompt" type="text" name="prompt" required maxlength="120"
+                   value="{{ form.prompt }}" placeholder="吃药 / 给妈妈打电话 / 交物业费">
+          </div>
+        </div>
+        <div class="field">
+          <label for="rm-target">提醒谁</label>
+          <div class="field-body">
+            <select id="rm-target" name="target_member_id"
+                    style="padding:9px;border-radius:8px;border:1px solid #c7c7cc;background:Canvas;color:inherit">
+              <option value="">全部(爸爸和妈妈)</option>
+              {% for m in members %}
+              <option value="{{ m.id }}" {% if form.target_member_id == m.id|string %}selected{% endif %}>{{ m.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="field">
+          <label for="rm-at">某个时刻</label>
+          <div class="field-body">
+            <input id="rm-at" type="datetime-local" name="at_local"
+                   value="{{ form.at_local or default_at }}">
+            <button class="ghost small" type="submit" name="when" value="at">到点响一次</button>
+          </div>
+        </div>
+        <div class="field">
+          <label for="rm-time">每天</label>
+          <div class="field-body">
+            <input id="rm-time" type="time" name="time_local" value="{{ form.time_local or '09:00' }}">
+            <button class="ghost small" type="submit" name="when" value="daily">每天这个点</button>
+          </div>
+        </div>
+        <div class="field">
+          <label for="rm-every">每隔</label>
+          <div class="field-body">
+            <input id="rm-every" type="number" name="minutes" value="{{ form.minutes or '30' }}"
+                   min="5" max="10080" style="width:110px">
+            <span class="field-note">分钟</span>
+            <button class="ghost small" type="submit" name="when" value="interval">每隔这么久</button>
+          </div>
+        </div>
+      </form>
+      <p class="field-help">
+        上面三个按钮各管一行;填好哪一行就按哪一个。重复提醒最短 5 分钟。
+      </p>
+    </section>
+  </details>
+
+  {# 该响的 = 待响 + 已错过。已错过要留在明面上:那是"到点了却没响",
+     多半是推送环没跑起来,压进折叠里就等于把故障藏起来(见 task_view 的状态口径)。 #}
+  <div class="section-head">
+    <h2>该响的提醒</h2>
+    <span class="section-note">
+      {{ reminders_wait }} 条待响{% if reminders_late %} · {{ reminders_late }} 条已错过{% endif %}{% if reminders_quiet_total %} · 另有 {{ reminders_quiet_total }} 条已了结{% endif %}
+    </span>
+  </div>
+  <section class="card flush">
+    {% if reminders_live %}
+    <div class="list" style="padding:4px 16px">
+      {% for r in reminders_live %}{{ reminder_row(r) }}{% endfor %}
+    </div>
+    {% else %}
+    <div class="empty">
+      <span class="empty-mark">🔔</span>
+      <span class="empty-title">还没有该响的提醒</span>
+      <span class="empty-sub">点上面的「＋ 定一个新提醒」,或在聊天里说「每天九点提醒我吃药」。</span>
+    </div>
+    {% endif %}
+  </section>
+
+  {% if reminders_quiet %}
+  <details class="fold">
+    <summary>
+      <span class="fold-caret" aria-hidden="true">▸</span>已响过 / 已关闭的 {{ reminders_quiet_total }} 条
+    </summary>
+    <section class="card flush">
+      <div class="list" style="padding:4px 16px">
+        {% for r in reminders_quiet %}{{ reminder_row(r) }}{% endfor %}
+      </div>
+    </section>
+  </details>
+  {% endif %}
+
+  <div class="section-head">
+    <h2>日程提醒</h2>
+    <span class="section-note">{{ agenda_reminders.upcoming_total }} 条待响{% if agenda_reminders.past_total %} · {{ agenda_reminders.past_total }} 条已响过{% endif %}</span>
+  </div>
+  <section class="card flush">
+    {% if agenda_reminders.upcoming %}
+    <div class="list" style="padding:4px 16px">
+      {% for a in agenda_reminders.upcoming %}
+      <div class="row">
+        <span class="row-main">
+          <span class="row-title">{{ a.title }}</span>
+          <span class="row-sub">
+            {{ a.fire_text }} 提醒你(日程在 {{ a.start_text }}{% if a.location %} · @{{ a.location }}{% endif %})
+          </span>
+        </span>
+        <span class="tag">{{ a.state_label }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% if agenda_reminders.upcoming_more %}
+    <p class="muted" style="padding:0 16px 12px">
+      还有 {{ agenda_reminders.upcoming_more }} 条(窗口里共 {{ agenda_reminders.total }} 条),
+      完整排期看「日程」页。
+    </p>
+    {% endif %}
+    {% else %}
+    <div class="empty">
+      <span class="empty-mark">📆</span>
+      <span class="empty-title">这段时间没有会响的日程提醒</span>
+      <span class="empty-sub">日程默认提前 30 分钟提醒;不想要的可以在聊天里说「这个日程不用提醒」。</span>
+    </div>
+    {% endif %}
+
+    {% if agenda_reminders.past %}
+    <details style="padding:0 16px 12px">
+      <summary class="muted" style="cursor:pointer">已经响过 / 错过的那 {{ agenda_reminders.past_total }} 条</summary>
+      <div class="list" style="margin-top:8px">
+        {% for a in agenda_reminders.past %}
+        <div class="row">
+          <span class="row-main">
+            <span class="row-title">{{ a.title }}</span>
+            <span class="row-sub">{{ a.fire_text }} · {{ a.state_label }}</span>
+          </span>
+        </div>
+        {% endfor %}
+      </div>
+    </details>
+    {% endif %}
+  </section>
+
+  <details class="about">
+    <summary>提醒是怎么送到的</summary>
+    <div class="about-body">
+      <p>提醒靠后台调度器送到微信(见 <code>launcher.cmd status</code>);
+        这一页只负责把"设了哪些提醒、下一次什么时候响"如实摆出来。</p>
+      {% if tzid %}<p>时区:{{ tzid }}。</p>{% endif %}
+    </div>
+  </details>
+
+  {% else %}
+  {# ---------------------------------------------------------- 待办 #}
+  <details class="new-fold"{% if form_open %} open{% endif %}>
+    <summary>
+      <span class="nf-icon" aria-hidden="true">＋</span>记一条待办
+      <span class="nf-hint">到期日 / 到点提醒</span>
+    </summary>
+    <section class="card">
+      <form method="post" action="/calendar/todos/add">
+        <input type="hidden" name="_idem" value="{{ idem() }}">
+        <div class="field">
+          <label for="td-content">做什么</label>
+          <div class="field-body">
+            <input id="td-content" type="text" name="content" required maxlength="200"
+                   value="{{ form.content }}" placeholder="交物业费 / 给车做保养">
+          </div>
+        </div>
+        <div class="field">
+          <label for="td-due">哪天到期</label>
+          <div class="field-body">
+            <input id="td-due" type="date" name="due" value="{{ form.due }}">
+            <input id="td-at" type="time" name="at" value="{{ form.at }}" style="width:128px"
+                   aria-label="几点(填了就自带一次到点提醒)">
+            <button type="submit">记下</button>
+          </div>
+        </div>
+      </form>
+      <p class="field-help">
+        填了时刻就<strong>自带一次到点提醒</strong>;到点在微信里说一声,你回「做完了」就勾掉了。
+      </p>
+    </section>
+  </details>
+
+  <div class="section-head">
+    <h2>未完成</h2>
+    <span class="section-note">
+      {{ todos_open }} 条{% if todo_counts.in_progress %} · 在做 {{ todo_counts.in_progress }}{% endif %}
+    </span>
+  </div>
+
+  {% if todo_groups %}
+    {% for group in todo_groups %}
+    <div class="todo-group">
+      <div class="day-label">
+        <span class="day-date">{{ group.label }}</span>
+        <span class="spacer"></span>
+        <span>{{ group.count }} 条</span>
+      </div>
+      <section class="card flush">
+        <div class="list" style="padding:4px 16px">
+          {% for t in group['items'] %}
+          <div class="row" id="todo-{{ t.id }}">
+            <form method="post" action="/calendar/todos/{{ t.id }}/done">
+              <input type="hidden" name="_idem" value="{{ idem() }}">
+              <button class="ghost small" type="submit" title="勾掉这一条(能撤销)">完成</button>
+            </form>
+            <span class="row-main">
+              <span class="row-title">{{ t.content }}</span>
+              <span class="row-sub">
+                {%- if t.has_alarm %}⏰ {{ t.alarm_text }} · {% endif -%}
+                {% if t.is_agent %}{{ t.source_label }}{% else %}你记的{% endif %}
+              </span>
+            </span>
+            {% if t.due_label %}
+            <span class="tag {{ 'draft' if t.overdue else '' }}">{{ t.due_label }}</span>
+            {% endif %}
+            <form method="post" action="/calendar/todos/{{ t.id }}/delete">
+              <input type="hidden" name="_idem" value="{{ idem() }}">
+              <button class="danger small" type="submit" title="删掉(聊天页回执托盘里能撤销)">删</button>
+            </form>
+          </div>
+          {% endfor %}
+        </div>
+      </section>
+    </div>
+    {% endfor %}
+  {% else %}
+  <section class="card">
+    <div class="empty">
+      <span class="empty-mark">✅</span>
+      <span class="empty-title">没有未完成的待办</span>
+      <span class="empty-sub">点上面的「＋ 记一条待办」,或说一句「提醒我周五交物业费」。</span>
+    </div>
+  </section>
+  {% endif %}
+
+  {% if todos_done %}
+  <details class="fold">
+    <summary>
+      <span class="fold-caret" aria-hidden="true">▸</span>已完成 {{ todo_counts.completed }} 条(最近 20 条)
+    </summary>
+    <section class="card flush" style="margin-top:8px">
+      <div class="list" style="padding:4px 16px">
+        {% for t in todos_done %}
+        <div class="row">
+          <span class="row-main">
+            <span class="row-title" style="color:var(--fg-2)">{{ t.content }}</span>
+            <span class="row-sub">{{ t.due_text or "没设到期日" }}</span>
+          </span>
+          <form method="post" action="/calendar/todos/{{ t.id }}/reopen">
+            <input type="hidden" name="_idem" value="{{ idem() }}">
+            <button class="neutral small" type="submit" title="放回未完成">放回</button>
+          </form>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+  </details>
+  {% endif %}
+  {% endif %}
+
+</div>
+{% endblock %}
