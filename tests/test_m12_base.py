@@ -504,7 +504,9 @@ class TestBaseTools(unittest.TestCase):
     def test_file_list_shows_project_root_by_default(self) -> None:
         result = self.call("file", {"path": str(self.root), "action": "list"})
         self.assertTrue(result.ok)
-        self.assertIn(str(self.root), result.data)
+        # ⚠️ Windows 的 TEMP 可能是 8.3 短名(CI 上是 RUNNER~1),而工具会把路径
+        #    解析成真实长名 —— 两边都规范化再比,否则这条在 CI 上必红。
+        self.assertIn(os.path.realpath(str(self.root)), result.data)
 
     def test_image_view_uses_vision_model(self) -> None:
         path = self.root / "receipt.png"
