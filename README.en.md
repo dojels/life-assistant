@@ -1,5 +1,6 @@
 # Family Assistant · Life Assistant
 
+[![tests](https://github.com/dojels/life-assistant/actions/workflows/ci.yml/badge.svg)](https://github.com/dojels/life-assistant/actions/workflows/ci.yml)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 ![python](https://img.shields.io/badge/python-3.12%2B-blue)
 

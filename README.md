@@ -1,8 +1,8 @@
 # 家庭助手 · Life Assistant
 
+[![tests](https://github.com/dojels/life-assistant/actions/workflows/ci.yml/badge.svg)](https://github.com/dojels/life-assistant/actions/workflows/ci.yml)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 ![python](https://img.shields.io/badge/python-3.12%2B-blue)
-![platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)
 
 跑在你自己电脑上的家庭 AI 助手：**聊天 + 长期记忆 + 记账 + 日历 + 健康 + 错题本**，
 数据全部落在本地 SQLite，模型只在你说话的时候被调用。
