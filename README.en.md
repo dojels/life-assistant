@@ -31,14 +31,17 @@ the assistant asks "remember this?" before storing. Sensitive items (ID numbers,
 phones) never enter the prompt by default. Facts, summaries and raw retrieval are budgeted
 separately, and a wrong fact can be corrected, expired or reverted.
 
-![health](docs/images/health.png)
-
 ## What else is inside
 
 Ledger (budgets, bill import, trends) · Calendar (month view, events, reminders, todos,
 iCalendar subscription) · Health (weight/steps/sleep/workouts, Apple Health import, iOS
 Shortcuts push) · Notes · Trace page (replay exactly what the model saw) · Usage report
 (turns, tokens, cache hit rate, tool success rate).
+
+![health](docs/images/health.png)
+
+*Health page with demo data: log weight and workouts by hand, or let iOS Shortcuts push steps,
+sleep and workouts to `/api/health/sync` every day — no watch required, no cloud involved.*
 
 ## Quick start
 
