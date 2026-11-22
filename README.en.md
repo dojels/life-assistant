@@ -16,8 +16,14 @@ Everything lives in a local SQLite database; the model is only called when you t
 
 **1. WeChat is the primary interface.** Each parent scans their own code and gets an
 independent session and memory. Ask for a reminder, log an expense, or send a photo of a
-worksheet — no app to install. (The WeChat bridge uses a self-registered iLink channel and is
-off by default; without it the local web UI works the same.)
+worksheet — no app to install. (The WeChat bridge uses WeChat's built-in ClawBot / iLink plugin,
+off by default; without it the local web UI works the same. Setup guide: [docs/微信接入.md](docs/微信接入.md), Chinese.)
+
+<p align="center">
+  <img src="docs/images/wechat-list.jpg" width="30%" alt="WeChat chat list">
+  <img src="docs/images/wechat-chat.jpg" width="30%" alt="asking for the worksheet in WeChat">
+  <img src="docs/images/wechat-sheet.jpg" width="30%" alt="worksheet opened on a phone">
+</p>
 
 **2. Parents share one mistake notebook.** One photo → stem, cropped figure, answer and
 analysis in a single model call. Spaced repetition (fixed interval or FSRS) pushes reviews on
