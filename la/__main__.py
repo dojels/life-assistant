@@ -289,7 +289,27 @@ def _print_phase_event(kind: str, data: dict) -> None:
         print("  [" + kind + "] " + str(data))
 
 
+def _make_console_survivable() -> None:
+    """让中文输出在"编码装不下"的控制台上也不至于把进程打死。
+
+    ⚠️ 真实踩过两处:GitHub Actions 的 Windows runner 控制台是 cp1252,
+    打印一句「== 家庭助手自检 ==」就 UnicodeEncodeError 退出,整个 CI 红;
+    用户把输出重定向到文件、或换成非中文代码页的终端时同样会遇到。
+
+    ⭐ 只改 errors(**不改 encoding**):能显示的照常显示,显示不了的变成 '?',
+    这样"打印一行帮助文字"永远不会比"真正要跑的任务"更致命。
+    """
+    import sys
+
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="replace")
+        except (AttributeError, OSError, ValueError):
+            pass
+
+
 def main(argv: list[str] | None = None) -> int:
+    _make_console_survivable()
     parser = argparse.ArgumentParser(prog="la", description="家庭助手(本地优先的个人助理)")
     parser.add_argument("--once", metavar="TEXT", help="只跑一轮就退出")
     parser.add_argument("--check", action="store_true", help="打印环境与数据库自检后退出")

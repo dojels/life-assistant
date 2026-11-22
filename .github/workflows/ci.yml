@@ -17,6 +17,11 @@ jobs:
         os: [ubuntu-latest, windows-latest]
         python-version: ["3.12", "3.13", "3.14"]
     runs-on: ${{ matrix.os }}
+    env:
+      # Windows runner 的控制台是 cp1252:不设这两条,任何一句中文 print 都会
+      # UnicodeEncodeError 把步骤打死(首次跑 CI 就是这么红的)。
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: "utf-8"
     steps:
       - uses: actions/checkout@v4
 
@@ -25,7 +30,9 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install
-        run: pip install -e .
+        # 带上 [tts] 额外依赖:lameenc 决定音频是 mp3 还是 wav,
+        # 少装它会让"说话要出音频文件"那条测试在 CI 上按降级路径红掉。
+        run: pip install -e ".[tts]"
 
       - name: Self check (no network)
         run: python -m la --check
