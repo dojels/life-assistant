@@ -80,9 +80,10 @@ class PathPolicy:
             raise PathNotAllowed(
                 "路径不在白名单内: " + str(path) + ";允许的根:" + allowed
             )
-        if must_exist and not resolved.exists():
-            raise PathNotAllowed("文件不存在: " + str(resolved))
         # ⚠️ 高敏的东西分两类:按**名字**拒(放哪个目录都不许)与按**位置**拒。
+        # ⭐ 顺序要紧:先判"是不是高敏",再判"存不存在" —— 否则一个不存在的 .env
+        #    会先撞"文件不存在",既把"这个文件在不在"透给调用方,也让"读 .env 一律拒绝"
+        #    这条规则依赖于本机恰好有没有那个文件(干净 clone 里没有 .env)。
         #
         # 2026-10-17 审计实测:旧名单只有几个名字,于是 data/wechat/credentials.json
         # (bot_token = 你的微信身份)与 settings.yaml(密钥来源)都能被 file 工具读走 ——
@@ -100,7 +101,27 @@ class PathPolicy:
         for marker in _DENY_MARKERS:
             if marker in posix:
                 raise PathNotAllowed("这个位置的文件不允许被工具读取: " + posix)
+        # 数据目录可以被 LA_DATA_DIR 挪走,所以位置判断不能只认字面的 "/data/"。
+        for protected in _protected_data_dirs():
+            try:
+                resolved.relative_to(protected)
+            except ValueError:
+                continue
+            raise PathNotAllowed("这个位置的文件不允许被工具读取: " + posix)
+        if must_exist and not resolved.exists():
+            raise PathNotAllowed("文件不存在: " + str(resolved))
         return resolved
+
+
+def _protected_data_dirs() -> tuple[Path, ...]:
+    """当前数据目录下的敏感子目录。
+
+    ⚠️ 不能把它们写死成 "/data/archive/" 这样的字面量:LA_DATA_DIR 一换目录,
+    字符串匹配全部失效,而调用方完全看不出来 —— 2026-11 开源整理时实测:
+    数据目录挪到项目外,archive 的成员归档就"读得动了"。
+    """
+    data = Path(config.DATA_DIR)
+    return tuple(data / name for name in ("archive", "trace", "wechat"))
 
 
 DEFAULT_POLICY = PathPolicy()
