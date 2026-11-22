@@ -180,6 +180,8 @@ def _add_todo(calendar: Any, services: Any, todo: Any) -> None:
     timed = moment is not None and moment.date() == due
 
     component = icalendar.Event()
+    # ⚠️ UID 后缀**故意保留旧名**:日历客户端靠 UID 认"同一条待办",
+    #    改一次后缀 = 用户手机里所有待办重复一遍。项目改名别动它。
     component.add("UID", "todo-" + str(getattr(todo, "id", "") or "") + "@life-assistant")
     component.add("SUMMARY", "待办 · " + content)
     component.add("DESCRIPTION", "来自家庭助手 · 待办")

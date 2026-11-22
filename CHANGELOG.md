@@ -4,7 +4,8 @@
 
 ## [0.1.0] - 2026-11-22
 
-首个公开版本。
+首个公开版本。项目名 **Mo Family Agent**（界面上写作「默 Mo / FAMILY AGENT」，
+中文仍叫"家庭助手"；仓库与发行包名从 `life-assistant` 改为 `mo-family-agent`）。
 
 ### 包含
 

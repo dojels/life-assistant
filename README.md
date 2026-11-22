@@ -1,6 +1,6 @@
-# 家庭助手 · Life Assistant
+# Mo Family Agent · 家庭助手
 
-[![tests](https://github.com/dojels/life-assistant/actions/workflows/ci.yml/badge.svg)](https://github.com/dojels/life-assistant/actions/workflows/ci.yml)
+[![tests](https://github.com/dojels/mo-family-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/dojels/mo-family-agent/actions/workflows/ci.yml)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 ![python](https://img.shields.io/badge/python-3.12%2B-blue)
 
@@ -42,6 +42,11 @@
 - 记忆分三层：事实 / 摘要池 / 原文检索，按预算注入，命中锚点能追回原文
 - 记错了能改、能失效、能撤回 —— 一条错的事实污染的是之后每一轮对话，所以这里不敢省事
 
+![记忆](docs/images/memory.png)
+
+> 记忆页（演示数据）：每条事实的类型、状态、**是否敏感**、这一轮有没有被注入，全摆在明面上。
+> 敏感那条即使进了提示词，也只是「家庭住址信息已隐藏」；改错、停用、撤回都在同一行。
+
 ---
 
 ## 还有什么
@@ -73,8 +78,8 @@
 **前置**：Python 3.12+（开发与验收在 3.14 完成）、一个 [DeepSeek](https://platform.deepseek.com/) API key。
 
 ```bash
-git clone https://github.com/dojels/life-assistant.git
-cd life-assistant
+git clone https://github.com/dojels/mo-family-agent.git
+cd mo-family-agent
 
 python -m venv .venv
 # Windows

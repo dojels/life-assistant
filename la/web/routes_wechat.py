@@ -161,6 +161,7 @@ def register_wechat_routes(app, *, templates) -> None:
         weixin_store.request_relogin(target)
         hint = "已通知重连,桥接会在下一轮轮询时自己接上新凭据(通常 5 秒内)。"
         if os.name != "nt":
+            # 同 UID 的道理:这是 systemd 单元名,改了就分叉,存量用户会"多出一个空服务"。
             unit = "life-assistant-wechat" + ("@" + target if target else "")
             hint += " 若 30 秒内仍无反应,在服务器执行:systemctl restart " + unit
         return flash("/settings?tab=wechat&account=" + target, hint)

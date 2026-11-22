@@ -47,7 +47,7 @@ import httpx
 from .. import config
 from .extract import html_to_text
 
-USER_AGENT = "life-assistant/0.1 (+local personal assistant)"
+USER_AGENT = "mo-family-agent/0.1 (+local personal assistant)"
 
 #: 能抓的内容类型(其余按二进制处理:只报类型,不硬解)
 TEXTUAL_TYPES = ("text/", "application/json", "application/xml", "application/xhtml")

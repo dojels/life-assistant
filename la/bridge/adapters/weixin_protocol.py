@@ -211,7 +211,7 @@ class ILinkClient:
         self.base_url = base_url.rstrip("/")
         self._client = httpx.AsyncClient(
             timeout=timeout_s, transport=transport,
-            headers={"User-Agent": "life-assistant/0.1 (ilink bot)"},
+            headers={"User-Agent": "mo-family-agent/0.1 (ilink bot)"},
         )
 
     async def aclose(self) -> None:

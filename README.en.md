@@ -1,6 +1,6 @@
-# Family Assistant · Life Assistant
+# Mo Family Agent
 
-[![tests](https://github.com/dojels/life-assistant/actions/workflows/ci.yml/badge.svg)](https://github.com/dojels/life-assistant/actions/workflows/ci.yml)
+[![tests](https://github.com/dojels/mo-family-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/dojels/mo-family-agent/actions/workflows/ci.yml)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 ![python](https://img.shields.io/badge/python-3.12%2B-blue)
 
@@ -31,6 +31,11 @@ the assistant asks "remember this?" before storing. Sensitive items (ID numbers,
 phones) never enter the prompt by default. Facts, summaries and raw retrieval are budgeted
 separately, and a wrong fact can be corrected, expired or reverted.
 
+![memory](docs/images/memory.png)
+
+*Memory page with demo data: type, status, sensitivity and whether a fact was injected this turn
+are all on the surface. A sensitive fact enters the prompt only as "address hidden".*
+
 ## What else is inside
 
 Ledger (budgets, bill import, trends) · Calendar (month view, events, reminders, todos,
@@ -48,8 +53,8 @@ sleep and workouts to `/api/health/sync` every day — no watch required, no clo
 Requires Python 3.12+ and a [DeepSeek](https://platform.deepseek.com/) API key.
 
 ```bash
-git clone https://github.com/dojels/life-assistant.git
-cd life-assistant
+git clone https://github.com/dojels/mo-family-agent.git
+cd mo-family-agent
 python -m venv .venv && source .venv/bin/activate   # Windows: .venv\\Scripts\\activate
 pip install -e ".[tts]"
 cp .env.example .env        # then set DEEPSEEK_API_KEY=sk-...

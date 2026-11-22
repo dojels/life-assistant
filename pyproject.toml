@@ -1,5 +1,5 @@
 [project]
-name = "life-assistant"
+name = "mo-family-agent"
 version = "0.1.0"
 description = "本地优先的家庭助手智能体:长期记忆 + 记账/日程/健康/错题四个能力域"
 readme = "README.md"
@@ -51,10 +51,10 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/dojels/life-assistant"
-Repository = "https://github.com/dojels/life-assistant"
-Issues = "https://github.com/dojels/life-assistant/issues"
-Changelog = "https://github.com/dojels/life-assistant/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/dojels/mo-family-agent"
+Repository = "https://github.com/dojels/mo-family-agent"
+Issues = "https://github.com/dojels/mo-family-agent/issues"
+Changelog = "https://github.com/dojels/mo-family-agent/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 # 听写音频的 MP3 编码。**没装也能用**:退回 WAV,只是体积大 5 倍(见 study/tts.py)。

@@ -749,7 +749,7 @@ def register_calendar_routes(app, *, templates) -> None:
             content=body,
             media_type="text/calendar; charset=utf-8",
             headers={
-                "Content-Disposition": disposition + '; filename="life-assistant.ics"',
+                "Content-Disposition": disposition + '; filename="mo-family-agent.ics"',
                 "Cache-Control": "no-store",
             },
         )
