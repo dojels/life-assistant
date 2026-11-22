@@ -41,7 +41,7 @@ see it is `python -m la --web`.
 Requirements: Python 3.12+ and a [DeepSeek](https://platform.deepseek.com/) API key.
 
 ```bash
-git clone <your-repo-url> life-assistant
+git clone https://github.com/dojels/life-assistant.git
 cd life-assistant
 python -m venv .venv && source .venv/bin/activate   # Windows: .venv\\Scripts\\activate
 pip install -e .

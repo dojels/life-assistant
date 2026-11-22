@@ -48,7 +48,7 @@
 **前置**：Python 3.12+（开发与验收在 3.14 上完成）、一个 [DeepSeek](https://platform.deepseek.com/) API key。
 
 ```bash
-git clone <your-repo-url> life-assistant
+git clone https://github.com/dojels/life-assistant.git
 cd life-assistant
 
 python -m venv .venv

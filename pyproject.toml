@@ -6,7 +6,7 @@ readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.12"
-authors = [{ name = "Life Assistant contributors" }]
+authors = [{ name = "dojels" }]
 keywords = ["personal-assistant", "local-first", "sqlite", "agent", "self-hosted"]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -49,6 +49,12 @@ dependencies = [
     #    python-docx 那三个一样:没装时功能少一块,而不是整个应用起不来。
     "pillow>=11",         # bbox 裁剪 + EXIF 方向(手机横拍的照片)
 ]
+
+[project.urls]
+Homepage = "https://github.com/dojels/life-assistant"
+Repository = "https://github.com/dojels/life-assistant"
+Issues = "https://github.com/dojels/life-assistant/issues"
+Changelog = "https://github.com/dojels/life-assistant/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 # 听写音频的 MP3 编码。**没装也能用**:退回 WAV,只是体积大 5 倍(见 study/tts.py)。
